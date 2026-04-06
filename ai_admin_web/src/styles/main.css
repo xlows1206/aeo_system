@@ -1,0 +1,186 @@
+:root {
+  --n-item-color-active: #565656 !important;
+  --n-border-color: red !important;
+}
+
+.n-layout {
+  background: linear-gradient(to right, #FBFAEF, #FEFFFE) !important;
+}
+
+.n-menu .n-menu-item-content.n-menu-item-content--selected::before {
+  background: #FAF4E3 !important;
+}
+
+.n-menu-item-content-header {
+  color: #969694 !important;
+}
+
+.n-menu .n-menu-item-content:not(.n-menu-item-content--disabled):hover::before {
+  background: #FFFAED !important;
+  color: red !important;
+}
+
+.n-menu-item-content-header:hover {
+  color: #D6B164 !important;
+}
+
+.n-menu .n-menu-item-content.n-menu-item-content--selected .n-menu-item-content-header {
+  color: #D6B164 !important;
+}
+
+.n-menu .n-menu-item-content .n-menu-item-content__icon {
+  color: #D6B164 !important;
+  background: #fff !important;
+  border-radius: 50% !important;
+}
+
+.n-menu .n-menu-item-content.n-menu-item-content--selected .n-menu-item-content__icon {
+  color: #fff !important;
+  background: #D6B164 !important;
+  border-radius: 50% !important;
+  padding: 5px !important;
+}
+
+.n-menu-item-content--child-active:before {
+  background: #FAF4E3 !important;
+}
+
+.n-menu-item-content.n-menu-item-content--child-active {
+  .n-menu-item-content__icon {
+    color: #fff !important;
+    background: #D6B164 !important;
+    border-radius: 50% !important;
+    padding: 5px !important;
+  }
+
+  .n-menu-item-content-header {
+    color: #D6B164 !important;
+  }
+}
+
+.n-breadcrumb-item__separator {
+  color: #D6B164 !important;
+  margin: 0 !important;
+}
+
+.n-button {
+  border: none !important;
+}
+
+.n-button--primary-type, .n-button--info-type {
+  background: linear-gradient(to right, #FBD658, #C89327) !important;
+}
+
+.n-card {
+  background: linear-gradient(to right, #FBFAEF, #FEFFFE) !important;
+}
+
+.n-button__border {
+  border: none !important;
+}
+
+.n-button__state-border {
+  border: none !important;
+}
+
+.n-button--default-type > .n-button__border {
+  border: 1px solid #D6B164 !important;
+}
+
+.n-button--default-type {
+  color: #9C6643 !important;
+}
+
+.n-form-item-label__text {
+  color: #9C6643 !important;
+}
+
+.n-input__border {
+  border: 1px solid #F9EBA9 !important;
+}
+
+.n-data-table-wrapper {
+  border: 1px solid #F9EBA9 !important;
+}
+
+.n-data-table-th__title, .n-pagination-prefix, .n-drawer-header__main {
+  color: #9C6643 !important;
+}
+
+.n-data-table-th {
+  background: #FEFFFE !important;
+}
+
+.n-data-table-td {
+  background: #FEFFFE !important;
+}
+
+.n-pagination .n-pagination-item:not(.n-pagination-item--disabled).n-pagination-item--active {
+  border: 1px solid #F9EBA9 !important;
+  color: #9C6643 !important;
+}
+
+.n-input__state-border, .n-base-selection__border {
+  border: 1px solid #F9EBA9 !important;
+  box-shadow: none !important;
+}
+
+.n-drawer-header {
+  border: none !important;
+}
+
+.n-base-close {
+  color: #D6B164 !important;
+}
+
+.n-base-icon {
+  color: #D6B164 !important;
+}
+
+.custom-table .n-data-table__pagination {
+  padding-right: 20px;
+}
+
+.custom-table .n-data-table-wrapper {
+  border-right: none !important;
+  border-left: none !important;
+}
+
+.n-pagination .n-pagination-item.n-pagination-item--disabled.n-pagination-item--active, .n-pagination .n-pagination-item.n-pagination-item--disabled.n-pagination-item--button {
+  background: #ffffff !important;
+  border: 1px solid #F9EBA9 !important;
+}
+
+.n-pagination .n-pagination-item:not(.n-pagination-item--disabled).n-pagination-item--active {
+  background: linear-gradient(to right, #FBD658, #C89327) !important;
+  color: #ffffff !important;
+}
+
+.n-base-selection-input__content, .n-pagination-quick-jumper, .n-input__input-el {
+  color: #9C6643 !important;
+}
+
+.n-data-table .n-data-table-th {
+  border-color: #F9EBA9 !important;
+}
+
+.n-data-table .n-data-table-td {
+  border-color: #F9EBA9 !important;
+}
+
+.n-data-table-wrapper {
+  border-right: 15px !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+}
+
+.custom-header-main {
+  border: 1px solid #F9EBA9 !important;
+}
+
+.n-tree-node-content__text {
+  color: #9C6643 !important;
+}
+
+.n-button {
+  border-radius: 15px !important;
+}

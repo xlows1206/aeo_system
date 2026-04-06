@@ -1,0 +1,8 @@
+ssh root@47.115.51.244
+Aiaiai2024
+
+scp -r dist root@47.115.51.244:/www/wwwroot/47.115.51.244
+Aiaiai2024
+
+|-用户名: fbhz1ip1
+|-新密码: 256341
