@@ -21,7 +21,7 @@
         <div
           class="bg-white/90 backdrop-blur-sm border-amber-200 shadow-xl rounded-xl overflow-hidden h-full">
           <div class="pb-6 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
-            <div class="flex items-center gap-3 text-amber-900 text-4xl mb-3 font-semibold"
+            <div class="flex items-center gap-3 text-amber-900 text-2xl mb-3 font-semibold"
                  style="padding:20px">
               <div class="p-2 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg"
                    style="padding:2px;">
@@ -169,7 +169,7 @@
           <div class="pb-6 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100"
                style="padding:20px;">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3 text-amber-900 text-4xl mb-3 font-semibold">
+              <div class="flex items-center gap-3 text-amber-900 text-2xl mb-3 font-semibold">
                 <div class="p-2 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg">
                   <n-icon size="30" color="#fff">
                     <svg version="1.1" xmlns="http://www.w3.org/2000/svg"
@@ -184,8 +184,8 @@
                 资料提交进度
               </div>
               <div class="text-right">
-                <div class="text-3xl font-bold text-amber-900 ">{{params.totalRate.percentage}} %</div>
-                <div class="text-sm text-amber-600 text-xl">总体完成度</div>
+                <div class="text-2xl font-bold text-amber-900 ">{{params.totalRate.percentage}} %</div>
+                <div class="text-sm text-amber-600">总体完成度</div>
               </div>
             </div>
           </div>

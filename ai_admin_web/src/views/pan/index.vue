@@ -86,14 +86,35 @@
           <div
             v-if="params.activeName == '财务'"
             class="bg-white p-4 headerText flex items-center" style="border-top: 1px solid #F9EBA9">
-            公司存续年份：
-            <n-input-number style="width: 100px" :min="0" :max="1000" v-model:value="params.companyPersonnelInfo.duration_year"></n-input-number>
-            <n-button class="ml-2" style="border-radius: 5px !important" @click="saveCompanyDurationYear">保存
+            开始年份：
+            <n-select
+              style="width: 120px"
+              v-model:value="params.companyPersonnelInfo.start_year"
+              :options="params.yearOptions"
+              :disabled="!params.isEditingYear && !!params.companyPersonnelInfo.start_year"
+              placeholder="请选择"
+            />
+            <span class="ml-4">结束年份：</span>
+            <n-select
+              style="width: 120px"
+              v-model:value="params.companyPersonnelInfo.end_year"
+              :options="params.yearOptions"
+              :disabled="!params.isEditingYear && !!params.companyPersonnelInfo.end_year"
+              placeholder="请选择"
+            />
+            <n-button class="ml-2" style="border-radius: 5px !important" @click="saveCompanyDurationYear">
+              {{ params.isEditingYear ? '保存' : '修改' }}
             </n-button>
 
             报关单总数：
-            <n-input-number style="width: 100px" :min="0" v-model:value="params.companyPersonnelInfo.not_self_total"></n-input-number>
-            <n-button class="ml-2" style="border-radius: 5px !important" @click="saveCompanyNotSelfTotal">保存
+            <n-input-number
+              style="width: 100px"
+              :min="0"
+              :disabled="!params.isEditingTotal && params.companyPersonnelInfo.not_self_total !== null"
+              v-model:value="params.companyPersonnelInfo.not_self_total"
+            ></n-input-number>
+            <n-button class="ml-2" style="border-radius: 5px !important" @click="saveCompanyNotSelfTotal">
+              {{ params.isEditingTotal ? '保存' : '修改' }}
             </n-button>
           </div>
 
@@ -225,9 +246,28 @@ const params = reactive({
     financial_person_name: '',
     customs_person_name: '',
     duration_year: null,
+    start_year: null,
+    end_year: null,
     not_self_total: 0,
   },
+  yearOptions: [] as any[],
+  isEditingYear: false,
+  isEditingTotal: false,
 });
+
+const generateYearOptions = () => {
+  const currentYear = new Date().getFullYear();
+  const options = [] as any[];
+  for (let i = currentYear + 1; i >= currentYear - 10; i--) {
+    options.push({
+      label: `${i}年`,
+      value: i,
+    });
+  }
+  params.yearOptions = options;
+};
+
+generateYearOptions();
 
 const actionColumn = reactive({
   width: 80,
@@ -473,18 +513,29 @@ const changeFileList = (id: number, name: string) => {
 };
 
 const saveCompanyDurationYear = () => {
+  if (!params.isEditingYear && (params.companyPersonnelInfo.start_year || params.companyPersonnelInfo.end_year)) {
+    params.isEditingYear = true;
+    return;
+  }
   apiUpdateCompanyDurationYear({
-    duration_year: params.companyPersonnelInfo.duration_year,
+    start_year: params.companyPersonnelInfo.start_year,
+    end_year: params.companyPersonnelInfo.end_year,
   }).then(() => {
-    window.$message.success('保存成功');
+    window['$message'].success('修改成功');
+    params.isEditingYear = false;
   })
 }
 
 const saveCompanyNotSelfTotal = () => {
+  if (!params.isEditingTotal && params.companyPersonnelInfo.not_self_total !== null) {
+    params.isEditingTotal = true;
+    return;
+  }
   apiSaveCompanyNotSelfTotal({
     not_self_total: params.companyPersonnelInfo.not_self_total,
   }).then(() => {
-    window.$message.success('保存成功');
+    window['$message'].success('修改成功');
+    params.isEditingTotal = false;
   })
 }
 

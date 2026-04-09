@@ -33,6 +33,8 @@ RUN set -ex \
         echo "memory_limit=1G"; \
         echo "date.timezone=${TIMEZONE}"; \
     } | tee conf.d/99_overrides.ini \
+    # - config extensions
+    && apk add --no-cache php83-pecl-imagick php83-pecl-xlswriter --repository=http://dl-cdn.alpinelinux.org/alpine/v3.19/community --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community \
     # - config timezone
     && ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime \
     && echo "${TIMEZONE}" > /etc/timezone \
@@ -47,7 +49,8 @@ WORKDIR /opt/www
 # RUN composer install --no-dev --no-scripts
 
 COPY . /opt/www
-RUN composer install --no-dev -o && php bin/hyperf.php
+RUN cp .env.local_docker .env
+RUN composer install --no-dev -o --ignore-platform-reqs
 
 EXPOSE 9501
 

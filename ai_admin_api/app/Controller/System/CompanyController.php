@@ -66,7 +66,7 @@ class CompanyController extends BaseController
     #[RequestMapping(path: "durationYear", methods: "put")]
     public function updateDurationYear(RequestInterface $request)
     {
-        $user = $request->getParsedBody()['Auth'];
+        $user = $request->getParsedBody()['Auth'] ?? $request->input('Auth');
         $masterId = $user->master_id;
         $company = Company::where('master_id', $masterId)->first();
         if (!$company) {
@@ -75,6 +75,8 @@ class CompanyController extends BaseController
         }
 
         $company->duration_year = $request->input('duration_year');
+        $company->start_year = $request->input('start_year');
+        $company->end_year = $request->input('end_year');
 
         $company->save();
         return $this->responseService->success();
@@ -83,7 +85,7 @@ class CompanyController extends BaseController
     #[RequestMapping(path: "notSelfTotal", methods: "put")]
     public function notSelfTotal(RequestInterface $request)
     {
-        $user = $request->getParsedBody()['Auth'];
+        $user = $request->getParsedBody()['Auth'] ?? $request->input('Auth');
         $masterId = $user->master_id;
         $company = Company::where('master_id', $masterId)->first();
         if (!$company) {

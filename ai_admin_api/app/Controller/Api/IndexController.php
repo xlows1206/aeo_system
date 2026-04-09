@@ -49,6 +49,10 @@ class IndexController extends BaseController
     public function access_rate(Request $request)
     {
         $auth = $request->input('Auth');
+        if (! $auth) {
+            return $this->responseService->error('未授权或用户不存在');
+        }
+
         $folderCounts = Db::table('folders as f')
             ->leftJoin('folders as ff', 'ff.parent_id', '=', 'f.id')
             ->whereNull('ff.id')
@@ -56,13 +60,15 @@ class IndexController extends BaseController
             ->select([Db::raw('count(*) as count'), 'f.standard_id'])
             ->pluck('count', 'f.standard_id')
             ->toArray();
+
         $accessCounts = Db::table('pre_audit_results as par')
             ->where('par.is_access', 1)
             ->where('par.master_id', $auth->master_id)
             ->groupBy(['par.standard_id'])
             ->select([Db::raw('count(*) as count'), 'par.standard_id'])
-            ->pluck('count', 'f.standard_id')
+            ->pluck('count', 'par.standard_id')
             ->toArray();
+
         $rate = [];
         $standards = Db::table('standards')->get();
         foreach ($standards as $standard) {
@@ -76,14 +82,16 @@ class IndexController extends BaseController
             ->leftJoin('folders as ff', 'ff.parent_id', '=', 'f.id')
             ->whereNull('ff.id')
             ->count();
+
         $allAccessCounts = Db::table('pre_audit_results')
             ->where('master_id', $auth->master_id)
             ->where('is_access', 1)
             ->count();
+
         return $this->responseService->success([
             'standard_rates' => $rate,
             'all_rate' => [
-                "percentage" => ($folderCounts > 0) ? round(($allAccessCounts / $allFolderCounts) * 100, 2) : 0,
+                "percentage" => ($allFolderCounts > 0) ? round(($allAccessCounts / $allFolderCounts) * 100, 2) : 0,
                 "completed" => $allAccessCounts,
                 "total" => $allFolderCounts,
                 "name" => "总计",

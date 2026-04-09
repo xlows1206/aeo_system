@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace App\Job;
 
+use App\Lib\AI\CheckHandlers\CheckHandlerFactory;
 use App\Lib\AI\Finance;
 use App\Lib\Log;
 use App\Service\LogService;
@@ -113,51 +114,9 @@ class GetAiResult extends Job
             foreach ($all_files_group as $files) {
                 foreach ($files as $file) {
                     if ($file->check_type == 1) {
-                        if ($file->check_name == '资产负债率情况') {
-                            $aiStr =
-                                '# 角色
-                                            你是一个专业且谨慎仔细的文员，非常擅长于从图片中抽取相关信息。
-                                            # 任务
-                                            你需要从提供资料的"期末余额列"中提取分别叫做“负债合计”、“负债和所有者权益(或股东权益)合计”行的数据，并以以下格式输出结果。
-                                            请注意，你需要的值是“负债和所有者权益(或股东权益)合计”，而不是“所有者权益合计”这一行数据。
-                                            # 输出格式
-                                            请你以下面的JSON格式输出数据,"负债合计"命名为"liability","负债和所有者权益(或股东权益)合计"命名为"liability_equity",保留两位小数。
-                                               {
-                                                  "year": "{年份}",
-                                                  "liability": "{负债合计}",
-                                                  "liability_equity": "{负债和所有者权益(或股东权益)合计}"
-                                                }';
-                        } elseif ($file->check_name == '审计报告') {
-                            $aiStr = '# 角色
-                                            你是一个专业且谨慎仔细的文员，非常擅长于从文档资料中抽取相关信息并且判断是否符合业务规定。
-                                              # 任务
-                                              你需要仔细从提供的资料中提取会计事务所的审计意见并存入{scratch_pad}，"无法表示意见"、“有保留意见”、“无法出具”等意见为不通过，"无保留意见"为通过,请你根据内容输出{review}，输出结果true或false
-                                              # 输出格式
-                                              {
-                                                "year": "{year}",
-                                                "review": "{scratch_pad}",
-                                                “result”: “{review}”
-                                              }';
-                        } elseif ($file->check_name == '遵守法律法规') {
-                            $aiStr = '
-                                            # 角色
-                                            你是一个专业且谨慎仔细的文员，非常擅长于从文档资料中抽取相关信息并且判断是否符合业务规定。
-                                            # 任务
-                                            请你提取资料中的名字、证件号码存储到{scratch_pad}中,根据输出格式输出对应内容。
-                                            # 输出格式
-                                            请你以下面的JSON格式输出数据
-                                            {
-                                            "name":"{name}",
-                                            "id":"{id}"
-                                            "year":"{year}"
-                                            }';
-                        } elseif ($file->check_name == '行政被处罚金额') {
-                            $aiStr = "请你输出如下信息并用括号内字段命名，以JSON格式输出：时间(time)，被罚款单位(company)，罚款金额（amount）,单位为元";
-                        } elseif ($file->check_name == '被处罚单比例小于报关千分之一') {
-                            $aiStr = "请你识别文件中是否包含'“经自查”'关键字，以JSON格式只输出result字段内容，包含为true，否则false，禁止输出其他内容。";
-                        } else {
-                            $aiStr = "请你识别文件中是否包含'$file->check_text'关键字，以JSON格式只输出result字段内容，包含为true，否则false，禁止输出其他内容。";
-                        }
+                        $handler = CheckHandlerFactory::make($file->check_name);
+                        $aiStr = $handler->getPrompt(['check_text' => $file->check_text]);
+
                         $parallel->add(function () use ($file, $finance, $base_url, $model_name, $aiStr) {
                             return $this->extracted($aiStr, $file, $finance, $base_url, $model_name, [1, 2, 3]);
                         });
@@ -184,187 +143,24 @@ class GetAiResult extends Job
                 $result = json_decode($result, true);
                 $check_id = $key_arr[0];
                 $file = $all_files->where('check_id', $check_id)->first();
-                switch ($file->check_name) {
-                    case '遵守法律法规':
-                        $res[$file->check_name][] = [
-                            'file_id' => $file->file_id,
-                            'name' => $result['name'] ??  null,
-                            'file_name' => $file->file_name,
-                            'folder_id' => $file->folder_id,
-                            'folder_name' => $file->folder_name,
-                            'check_name' => $file->check_name,
-                        ];
-                        break;
-                    case '资产负债率情况':
-                        $res[$file->check_name][$result['year']] = [
-                            'file_id' => $file->file_id,
-                            'year' => $result['year'] ?? null,
-                            'liability' => $result['liability'] ?? null,
-                            'liability_equity' => $result['liability_equity'] ?? null,
-                            'file_name' => $file->file_name,
-                            'folder_id' => $file->folder_id,
-                            'folder_name' => $file->folder_name,
-                            'check_name' => $file->check_name,
-                        ];
-                        break;
-                    case '行政被处罚金额':
-                        $res[$file->check_name][] = [
-                            'file_id' => $file->file_id,
-                            'year' => $result['time'] ?? null,
-                            'company' => $result['company'] ?? null,
-                            'amount' => $result['amount'] ?? null,
-                            'file_name' => $file->file_name,
-                            'folder_id' => $file->folder_id,
-                            'folder_name' => $file->folder_name,
-                            'check_name' => $file->check_name,
-                        ];
-                        break;
-                    case '被处罚单比例小于报关千分之一':
-                        if (!$result['result'] || $result['result'] == 'false') {
-                            if (!isset($res[$file->check_name])) {
-                                $res[$file->check_name]['false_count'] = 1;
-                            } else {
-                                $res[$file->check_name]['false_count'] += 1;
-                            }
-                        }
-                        $res[$file->check_name][] = [
-                            'file_id' => $file->file_id,
-                            'year' => $result['year'] ?? null,
-                            'result' => $result['result'] ?? null,
-                            'file_name' => $file->file_name,
-                            'folder_id' => $file->folder_id,
-                            'folder_name' => $file->folder_name,
-                            'check_name' => $file->check_name,
-                        ];
-                        break;
-                    case '审计报告':
-                        if ($result['result'] || $result['result'] == 'true') {
-                            $res[$file->check_name][$result['year']] = [
-                                'file_id' => $file->file_id,
-                                'year' => $result['year'] ?? null,
-                                'result' => $result['result'] ?? null,
-                                'file_name' => $file->file_name,
-                                'folder_id' => $file->folder_id,
-                                'folder_name' => $file->folder_name,
-                                'check_name' => $file->check_name,
-                            ];
-                        }
-                        break;
-                    default:
-                        $res[$file->check_name] = [
-                            'file_id' => $file->file_id,
-                            'result' => $result['result'] ?? null,
-                            'file_name' => $file->file_name,
-                            'folder_id' => $file->folder_id,
-                            'folder_name' => $file->folder_name,
-                            'check_name' => $file->check_name,
-                        ];
+                if ($file) {
+                    $handler = CheckHandlerFactory::make($file->check_name);
+                    $res[$file->check_name][] = $handler->parseResult($result);
                 }
             }
             $resInfo = [];
-            foreach ($res as $key => $results) {
-                $check_name = $key;
-                switch ($check_name) {
-                    case '遵守法律法规':
-                        $allPersons = [];
-                        foreach ($results as $result) {
-                            $result = json_decode($result, true);
-                            foreach ($result as $value) {
-                                $allPersons[] = $value['name'] ?? '';
-                            }
-                        }
+            $context = [
+                'company_name' => $companyInfo->company_name ?? '',
+                'company_person_names' => $companyPersonName,
+                'duration_years' => $duration_years,
+                'not_self_total' => $companyInfo->not_self_total ?? 0,
+            ];
 
-                        if (count($companyPersonName) < 4) {
-                            $resInfo[$check_name][] = '无犯罪记录证明验证失败，未设置公司主要负责人信息';
-                            break;
-                        }
-
-                        // 跟公司主要人取差，如果存在差集，则不合格
-                        $diffPersons = array_diff($companyPersonName, $allPersons);
-                        if (count($diffPersons) > 0) {
-                            $resInfo[$check_name][] = implode('、', $diffPersons) . ' 未提供无犯罪记录证明, 请检查.';
-                        }
-                        break;
-                    case '资产负债率情况':
-                        if (count($duration_years) == 0) {
-                            $resInfo[$check_name][] = '未设置公司存续年份, 无法进行' . $check_name . '检查.';
-                            break;
-                        }
-                        foreach ($duration_years as $year) {
-                            if (!isset($results[$year])) {
-                                $resInfo[$check_name][] = $year . '年度' . $check_name . '未读取有效信息';
-                            } else {
-                                if (isset($results[$year])) {
-                                    // 如果 liability 和 liability_equity 都存在，则认为有效
-                                    $liability_equity = 0;
-                                    $liability = 0;
-                                    foreach ($results as $result) {
-                                        $liabilityItem = $result['liability'] ?? 0;
-                                        $liability_equityItem = $result['liability_equity'] ?? 0;
-                                        if ($liabilityItem > 0 && $liability_equityItem > 0) {
-                                            $liability = str_replace(',', '', $liabilityItem);
-                                            $liability_equity = str_replace(',', '', $liability_equityItem);
-                                        }
-                                    }
-
-                                    if ($liability == 0 && $liability_equity == 0) {
-                                        // 未读取有效信息
-                                        $resInfo[$check_name][] = $year . '年度' . $check_name . '未读取有效信息';
-                                    } else {
-                                        $ratio = bcdiv($liability, $liability_equity, 2);
-                                        if ($ratio > 0.95) {
-                                            // 不合格
-                                            $resInfo[$check_name][] = $year . '年度' . $check_name . '不合格, 负债率为' . $ratio * 100 . '%';
-                                        }
-                                    }
-                                } else {
-                                    $resInfo[$check_name][] = $year . '年度' . $check_name . '未读取有效信息';
-                                }
-                            }
-                        }
-                        break;
-                    case '行政被处罚金额':
-                        $amount = 0;
-                        $count = 0;
-                        foreach ($results as $result) {
-                            if ($result['company'] == $companyInfo->company_name) {
-                                $amount += $result['amount'];
-                                if ($result['is_self'] == 'false') {
-                                    $count++;
-                                }
-                            }
-                        }
-                        if ($amount > 50000) {
-                            $resInfo[$check_name][] = $check_name . '超过5万';
-                        }
-                        if ($count / $companyInfo->not_self_total > 0.001) {
-                            $resInfo[$check_name][] = $check_name . ' 存在被查处罚（不存在“经自查”字段）的报关单 超过 报关单总数 千分之一';
-                        }
-                        break;
-                    case '被处罚单比例小于报关千分之一':
-                        $count = $results['false_count'] ?? 0;
-                        if ($count / $companyInfo->not_self_total > 0.001) {
-                            $resInfo[$check_name][] = $check_name . ' 存在被查处罚（不存在“经自查”字段）的报关单 超过 报关单总数 千分之一';
-                        }
-                        break;
-                    case '审计报告':
-                        if (count($duration_years) == 0) {
-                            $resInfo[$check_name][] = '未设置公司存续年份, 无法进行' . $check_name . '检查.';
-                            break;
-                        }
-                        if (count($duration_years) > count($results)) {
-                            $resInfo[$check_name][] = $check_name . '未通过, 未读取到'.$duration_year.'年有效信息';
-                            foreach ($duration_years as $year) {
-                                if (!isset($results[$year])) {
-                                    $resInfo[$check_name][] = $year . '年度' . $check_name . '未通过, 未读取有效信息';
-                                }
-                            }
-                        }
-                        break;
-                    default:
-                        if (!$results['result'] || $results['result'] == 'false') {
-                            $resInfo[$check_name][] = $check_name . '未通过, 未读取有效信息';
-                        }
+            foreach ($res as $check_name => $aggregatedData) {
+                $handler = CheckHandlerFactory::make($check_name);
+                $auditResult = $handler->performAudit($aggregatedData, array_merge($context, ['check_name' => $check_name]));
+                if ($auditResult) {
+                    $resInfo[$check_name] = explode('; ', $auditResult);
                 }
             }
 
