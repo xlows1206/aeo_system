@@ -29,3 +29,9 @@
     - [x] 建立 `storage/prompts` 外部提示词存储体系
     - [x] 重构 `GetAiResult` 核心 Job 执行流程
     - [x] 更新 `.memory/backend_memory.md` 架构文档
+- [x] **[生产修复] 解决同步代码后登录提示网络错误 (502)** [已完成]
+    - [x] 修正 `.env` 容器内通信配置 (DB/Redis/Port)
+    - [x] 对齐 `docker-compose` 与 Nginx 转发端口
+- [x] **[架构优化] 实现多环境配置隔离 (Dev/Prod)** [已完成]
+    - [x] 创建 `.env.development` (Docker) 与 `.env.production` (Baota)
+    - [x] 建立基于文件的环境切换机制 (The Switch)

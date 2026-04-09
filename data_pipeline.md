@@ -31,3 +31,22 @@
   3. AI 返回原始 JSON。
   4. Handler 执行 `parse` (格式化) 与 `performAudit` (业务判定)。
 - **优点**: 核心 Job 逻辑恒定，各业务检测项可独立增加/删除/修改，互不干扰。 ✅ 通畅
+
+### 8. 生产环境网络联通性修复
+- **发现问题**: 同步代码至服务器后，前端请求报 Network Error，后端返回 502。
+- **根本原因**: 
+  1. `.env` 配置为 `DB_HOST=0.0.0.0`，导致 Docker 容器内无法连接数据库，服务崩溃/变慢。
+  2. `APP_PORT=8787` 与 `docker-compose` 的 `9501` 映射不符，Nginx 转发失败。
+- **修复措施**: 
+  - 修正 `APP_PORT=9501`。
+  - 修正 `DB_HOST=mysql`, `DB_PORT=3306`, `DB_DATABASE=aeo_ai`, `DB_PASSWORD=root`。
+  - 修正 `REDIS_HOST=redis`。
+- **状态**: ✅ 已建立多环境隔离体系。
+
+### 9. 多环境配置隔离方案 (Isolating Environments)
+- **目标**: 解决本地 (Docker) 与 生产 (宝塔) 环境配置频繁冲突问题。
+- **方案**: 
+  - 本地环境: 使用 `.env.development`，连接 Docker 容器内部服务 (`mysql`, `redis`)。
+  - 生产环境: 使用 `.env.production`，连接宝塔本地服务 (`127.0.0.1`)。
+- **切换方式**: 通过 `cp .env.{mode} .env` 激活对应环境。
+- **状态**: ✅ 已建立模板文件，系统架构已解耦。

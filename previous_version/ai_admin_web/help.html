@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown 中文跳转</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      padding: 20px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    a {
+      color: #0366d6;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+<div id="content"></div>
+
+<!-- Include marked.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- Include highlight.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/highlight.js/lib/common.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github.min.css">
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const markdownFilePath = 'help.md'; // 替换为你的 Markdown 文件路径
+
+    fetch(markdownFilePath)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('无法加载 Markdown 文件');
+        }
+        return response.text();
+      })
+      .then(markdown => {
+        renderMarkdown(markdown);
+      })
+      .catch(error => {
+        document.getElementById('content').innerHTML = '加载 Markdown 错误: ' + error.message;
+      });
+
+    function renderMarkdown(markdown) {
+      if (typeof marked !== 'undefined') {
+        const renderer = new marked.Renderer();
+
+        // 自定义标题渲染器，为中文标题添加 URL 编码后的 id
+        renderer.heading = function (text, level) {
+          const slug = encodeURIComponent(String(text).trim());
+          return `<h${level} id="${slug}">${text}</h${level}>`;
+        };
+
+        // 使用自定义渲染器解析 Markdown
+        const htmlContent = marked.parse(markdown, {
+          renderer: renderer,
+          highlight: function (code) {
+            return hljs.highlightAuto(code).value;
+          }
+        });
+        document.getElementById('content').innerHTML = htmlContent;
+
+        // 添加平滑滚动效果
+        document.querySelectorAll('#content a[href^="#"]').forEach(anchor => {
+          anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const targetId = decodeURIComponent(this.getAttribute('href').substring(1));
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+              targetElement.scrollIntoView({ behavior: 'smooth' });
+            }
+          });
+        });
+      } else {
+        console.error('Marked 库未正确加载。');
+      }
+    }
+  });
+</script>
+</body>
+</html>
