@@ -72,6 +72,7 @@
 
 <script lang="ts" setup>
 import {ref, h, reactive} from 'vue';
+import { useIntervalFn } from '@vueuse/core';
 import {BasicTable, TableAction} from '@/components/Table';
 import { FormSchema, useForm} from '@/components/Form/index';
 import {columns} from './columns';
@@ -225,6 +226,18 @@ function handleSubmit(values: Recordable) {
 loadRate()
 function handleReset(values: Recordable) {
 }
+
+useIntervalFn(() => {
+  if (actionRef.value) {
+    const dataSource = actionRef.value.getDataSource();
+    const hasPending = dataSource.some(item => item.status === 0);
+    // 如果存在处于“正在审核”状态的任务，则触发静默拉取
+    if (hasPending) {
+        actionRef.value.reload({ showLoading: false });
+        loadRate();
+    }
+  }
+}, 10000); // 每 10 秒轮询一次
 </script>
 
 <style lang="less" scoped></style>

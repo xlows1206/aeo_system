@@ -45,7 +45,9 @@ export function useDataSource(
 
   async function fetch(opt?) {
     try {
-      setLoading(true);
+      if (opt?.showLoading !== false) {
+        setLoading(true);
+      }
       const { request, pagination, beforeRequest, afterRequest }: any = unref(propsRef);
       if (!request) return;
       //组装分页信息
@@ -117,7 +119,9 @@ export function useDataSource(
         pageCount: 0,
       });
     } finally {
-      setLoading(false);
+      if (opt?.showLoading !== false) {
+        setLoading(false);
+      }
     }
   }
 

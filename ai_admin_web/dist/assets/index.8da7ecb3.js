@@ -1,1 +1,0 @@
-import{d as s,e as n,c as u,b1 as c,j as p,dB as m}from"./index.fc262b08.js";const i=s({name:"Redirect",setup(){const t=n(),o=u();return c(()=>{const{params:r,query:a}=t,{path:e}=r;o.replace({path:"/"+(Array.isArray(e)?e.join("/"):e),query:a})}),()=>p(m,null,null)}});export{i as default};
