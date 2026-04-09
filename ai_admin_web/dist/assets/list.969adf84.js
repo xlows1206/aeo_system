@@ -1,0 +1,1 @@
+import{q as r}from"./index.fc262b08.js";function o(t){return r.request({url:"/v1/user",method:"get",params:t})}function s(t){return r.request({url:"/v1/tool/sendMail",method:"post",params:t})}function u(t){return r.request({url:"/v1/user/auth/forgotPassword",method:"post",params:t})}export{s as a,u as b,o as g};

@@ -1,0 +1,1 @@
+import{q as e}from"./index.fc262b08.js";function a(t){return e.request({url:"/v1/index/article",method:"GET",params:t})}function s(){return e.request({url:"/v1/index/access_rate",method:"GET"})}export{a,s as b};
