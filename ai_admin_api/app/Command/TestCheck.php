@@ -70,12 +70,14 @@ class TestCheck extends HyperfCommand
 
         $companyPersonName = [$companyInfo?->enterprise_person_name, $companyInfo?->principal_person_name, $companyInfo?->financial_person_name, $companyInfo?->customs_person_name];
         $companyPersonName = array_values(array_filter($companyPersonName));
-        // 公司存续年份
-        $duration_year = $companyInfo?->duration_year ?? 0;
-        // 根据年份算出年份
+        // 根据设置的起止年份算出年份
+        $start_year = $companyInfo?->start_year ?? 0;
+        $end_year = $companyInfo?->end_year ?? 0;
         $duration_years = [];
-        for ($i = 0; $i < $duration_year; $i++) {
-            $duration_years[] = date('Y', strtotime('-' . $i . 'year'));
+        if ($start_year > 0 && $end_year > 0 && $start_year <= $end_year) {
+            for ($y = $start_year; $y <= $end_year; $y++) {
+                $duration_years[] = (string) $y;
+            }
         }
 
 
