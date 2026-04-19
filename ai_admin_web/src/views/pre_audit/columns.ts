@@ -7,7 +7,7 @@ export interface ListData {
   updated_at: string;
   permissions: string;
 }
-const STATUS_CN = ref(['正在审核', '不达标', '基本达标', '达标']);
+const STATUS_CN = ref(['正在审核', '不合格', '', '合格']);
 const STATUS_TYPE = ref(['default', 'error' ,'warning', 'success']);
 export const columns: BasicColumn<ListData>[] = [
   {

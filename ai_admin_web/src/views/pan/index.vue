@@ -33,170 +33,184 @@
       <div class="right"
            style="width: calc(100% - 150px);border-top-right-radius: 10px;border-bottom-right-radius: 10px;">
         <div class="fileContent"
-             style="border-top-right-radius: 10px;border-bottom-right-radius: 10px;">
-          <n-flex
-            class="flex flex-row justify-between items-center"
-            style="padding: 20px 20px;border-bottom-right-radius: 10px;background: #ffffff">
-            <div class="flex gap-2">
+             style="border-top-right-radius: 10px;border-bottom-right-radius: 10px text-wrap: wrap;">
+          <!-- 头部操作栏：仅在进入项目后显示 -->
+          <!-- 头部操作栏：仅在进入项目后显示 -->
+          <div
+            v-if="!isAtProjectList"
+            class="bg-white p-5 border-b border-gray-100"
+            style="border-bottom-right-radius: 10px;"
+          >
+            <!-- 第一行：返回按钮与标题 -->
+            <div class="flex items-center gap-4 mb-4">
+              <n-button 
+                style="border-radius: 5px !important; color: #fff !important;"
+                type="primary"
+                size="small"
+                @click="handleClickFolder(0)"
+              >
+                <template #icon>
+                  <n-icon color="#fff"><ArrowBack /></n-icon>
+                </template>
+                返回
+              </n-button>
+              <h2 class="text-xl font-bold text-gray-800 m-0">
+                {{ params.paths.length > 0 ? params.paths[params.paths.length - 1].name : '' }}
+              </h2>
+            </div>
+
+            <!-- 第二行：操作按钮 -->
+            <div class="flex items-center gap-3">
               <v-upload
                 ref="uploadRef"
                 v-permission="{ action: ['pan.store'] }"
                 :searchParams="params.searchParams"
                 @reload="reloadTable"
               ></v-upload>
-<!--              <div>-->
-<!--                <n-button-->
-<!--                  style="border-radius: 5px !important"-->
-<!--                  v-permission="{ action: ['pan.store'] }" @click="openNewFolder">-->
-<!--                  <n-icon class="mr-1 text-xl">-->
-<!--                    <FolderAddOutlined/>-->
-<!--                  </n-icon>-->
-<!--                  新建文件夹-->
-<!--                </n-button>-->
-<!--              </div>-->
+
               <n-button
                 style="border-radius: 5px !important"
-                @click="toHelp">
-                <n-icon class="mr-1">
-                  <HelpOutline/>
-                </n-icon>
-                帮助文档
+                v-permission="{ action: ['pan.store'] }" 
+                @click="openNewFolder"
+              >
+                <template #icon>
+                  <n-icon class="text-lg"><FolderAddOutlined/></n-icon>
+                </template>
+                新建文件夹
               </n-button>
             </div>
 
-            <n-icon
-              class="cursor-pointer"
-              @click="reloadTable"
-              size="20" color="#D6B164">
-              <RefreshCcw/>
-            </n-icon>
-          </n-flex>
+            <!-- 项目上传说明文本：当存在描述时显示 -->
+            <n-alert
+              v-if="!isAtProjectList && params.paths.length > 0 && params.paths[params.paths.length - 1].description"
+              type="info"
+              class="mt-4"
+              :bordered="false"
+              style="background-color: #fefce8; border-left: 4px solid #facc15; border-radius: 8px;"
+            >
+              <template #header>
+                <div class="flex items-center gap-2 text-amber-800">
+                  <span class="font-bold">文件上传说明</span>
+                </div>
+              </template>
+              <div style="white-space: pre-wrap; color: #92400e; font-size: 14px; line-height: 1.6;">
+                {{ params.paths[params.paths.length - 1].description }}
+              </div>
+            </n-alert>
+          </div>
 
+          <!-- 警告提示栏 -->
           <div
             v-if="!params.companyPersonnel && params.activeName == '人事'"
             class="bg-white p-4 headerText flex items-center" style="border-top: 1px solid #F9EBA9">
-            <TriangleAlert
-              size="20"
-              class="mr-1"
-              color="#93694C"/>
+            <TriangleAlert size="20" class="mr-1" color="#93694C"/>
             <span class="mr-2">主要负责人员未设置，请先设置主要负责人员信息</span>
             <n-button size="small" @click="toSettingPersonnel">去设置</n-button>
           </div>
 
-          <div
-            v-if="params.activeName == '财务'"
-            class="bg-white p-4 headerText flex items-center" style="border-top: 1px solid #F9EBA9">
-            开始年份：
-            <n-select
-              style="width: 120px"
-              v-model:value="params.companyPersonnelInfo.start_year"
-              :options="params.yearOptions"
-              :disabled="!params.isEditingYear && !!params.companyPersonnelInfo.start_year"
-              placeholder="请选择"
-            />
-            <span class="ml-4">结束年份：</span>
-            <n-select
-              style="width: 120px"
-              v-model:value="params.companyPersonnelInfo.end_year"
-              :options="params.yearOptions"
-              :disabled="!params.isEditingYear && !!params.companyPersonnelInfo.end_year"
-              placeholder="请选择"
-            />
-            <n-button class="ml-2" style="border-radius: 5px !important" @click="saveCompanyDurationYear">
-              {{ params.isEditingYear ? '保存' : '修改' }}
-            </n-button>
 
-            报关单总数：
-            <n-input-number
-              style="width: 100px"
-              :min="0"
-              :disabled="!params.isEditingTotal && params.companyPersonnelInfo.not_self_total !== null"
-              v-model:value="params.companyPersonnelInfo.not_self_total"
-            ></n-input-number>
-            <n-button class="ml-2" style="border-radius: 5px !important" @click="saveCompanyNotSelfTotal">
-              {{ params.isEditingTotal ? '保存' : '修改' }}
-            </n-button>
-          </div>
+          <!-- 核心视图区 -->
+          <div v-if="isAtProjectList" style="padding: 10px 20px 20px 20px;">
+              <div class="mb-4 text-sm font-bold text-gray-500 flex items-center gap-10">
+                 <div class="flex items-center gap-2">
+                    <n-icon size="16"><ListOutline /></n-icon> 审核项目列表
+                 </div>
+                 <div v-if="params.allStats" class="flex items-center gap-1 text-xs">
+                    <span class="text-gray-400">AI审核通过进度:</span>
+                    <n-tag :bordered="false" size="small" type="primary" round>
+                      {{ params.allStats.passed }}/{{ params.allStats.total }}
+                    </n-tag>
+                 </div>
+              </div>
+             
+             <!-- 审核项目卡片列表 -->
+             <div v-if="params.loadingProjects" class="flex justify-center p-8">
+               <n-spin size="large" />
+             </div>
+             <div v-else-if="params.checkProjects.length === 0" class="flex justify-center p-8">
+               <n-empty description="暂无审核项目" />
+             </div>
+             
+             <!-- 审核项目列表：改为单行列表且可滚动 -->
+             <div 
+               v-else 
+               style="max-height: calc(100vh - 250px); overflow-y: auto; padding-right: 8px;"
+               class="grid grid-cols-1 gap-2"
+             >
+               <div 
+                 v-for="project in params.checkProjects" 
+                 :key="project.id" 
+                 class="project-card flex items-center justify-between p-3 bg-white border border-yellow-100 rounded-lg cursor-pointer hover:shadow-sm hover:bg-amber-50/30 transition-all mb-1"
+                 @click="handleClickFolder(project.id)"
+               >
+                  <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="flex items-center gap-3 overflow-hidden">
+                      <n-icon size="20" color="#d4a017"><FolderOpenOutline /></n-icon>
+                      <span class="text-gray-700 font-medium truncate">{{ project.name }}</span>
+                    </div>
+                    <!-- 审核状态标签 -->
+                    <n-tag 
+                      v-if="project.audit_status === 1" 
+                      size="small" 
+                      type="success" 
+                      :bordered="false" 
+                      round
+                    >审核通过</n-tag>
+                    <n-tag 
+                      v-else-if="project.audit_status === 2" 
+                      size="small" 
+                      type="error" 
+                      :bordered="false" 
+                      round
+                    >未通过</n-tag>
+                    <n-tag 
+                      v-else 
+                      size="small" 
+                      type="warning" 
+                      :bordered="false" 
+                      round
+                    >待审核</n-tag>
+                  </div>
+                 <n-icon size="16" color="#ccc"><ChevronForward /></n-icon>
+               </div>
+             </div>
+           </div>
 
-          <div
-            v-if="params.companyPersonnel && params.companyPersonnelInfo.enterprise_person_name != ''  && params.activeName == '人事'"
-            class="bg-white p-4 headerText flex items-center" style="border-top: 1px solid #F9EBA9">
-            <span class="mr-2">企业法定代表人：{{
-                params.companyPersonnelInfo.enterprise_person_name
-              }}</span>
-            <span class="mr-2">主要负责人员：{{
-                params.companyPersonnelInfo.principal_person_name
-              }}</span>
-            <span class="mr-2">财务负责人：{{
-                params.companyPersonnelInfo.financial_person_name
-              }}</span>
-            <span class="mr-2">关务负责人：{{
-                params.companyPersonnelInfo.customs_person_name
-              }}</span>
-          </div>
-
-          <div style="padding: 10px 20px ;background: #ffffff;border-top: 1px solid #F9EBA9">
-            <n-breadcrumb>
-              <n-breadcrumb-item
-                v-for="(item, index) in params.paths"
-                :key="index"
-                @click="handleClickFolder(item.id)"
-              ><span style="color: #9C6643">{{ item.name }}</span>
-              </n-breadcrumb-item>
-            </n-breadcrumb>
-          </div>
-          <div
-            class="custom-table"
-            style="padding: 0 0 20px 0">
+          <!-- 文件管理表格视图 -->
+          <div v-show="!isAtProjectList" class="p-4 bg-white">
             <BasicTable
               :columns="columns"
               :request="loadDataTable"
               ref="actionRef"
               :actionColumn="actionColumn"
-            >
-            </BasicTable>
+            />
           </div>
         </div>
       </div>
     </div>
 
-    <n-modal v-model:show="params.showModal" preset="dialog" title="Dialog">
-      <template #header>
-        <div>{{ params.modelTitle }}</div>
-      </template>
-      <n-form
-        ref="formFolderRef"
-        :model="params.folderData"
-        :rules="params.folderRules"
-        label-placement="left"
-        label-width="auto"
-        require-mark-placement="right-hanging"
-        :style="{
-          maxWidth: '640px',
-        }"
-      >
-        <n-form-item label="名称" path="name">
-          <n-input v-model:value="params.folderData.name"/>
-        </n-form-item>
-      </n-form>
-      <template #action>
-        <n-button type="primary" @click="handleValidateButtonClick" :loading="params.folderLoading">
-          保存
-        </n-button>
-      </template>
+    <!-- 弹窗组件 -->
+    <n-modal v-model:show="params.showModal" preset="dialog" :title="params.modelTitle">
+       <n-form ref="formFolderRef" :model="params.folderData" label-placement="left" :style="{maxWidth: '640px'}">
+         <n-form-item label="名称" path="name">
+           <n-input v-model:value="params.folderData.name"/>
+         </n-form-item>
+       </n-form>
+       <template #action>
+         <n-button type="primary" @click="handleValidateButtonClick" :loading="params.folderLoading">确定</n-button>
+       </template>
     </n-modal>
-
-    <v-move ref="moveRef"
-            :fileType="params.currentFileType == 1 ? 'folder' : 'file'"
-            :id="params.currentFileId" @reload="reloadTable"></v-move>
+    
+    <v-move ref="moveRef" :projectId="params.currentProjectId" @reload="reloadTable"></v-move>
   </div>
 </template>
 
+
 <script lang="ts" setup>
-import {ref, reactive, h} from 'vue';
+import {ref, reactive, h, computed, nextTick} from 'vue';
 import {BasicTable, TableAction} from '@/components/Table';
 import {FolderAddOutlined} from '@vicons/antd'
-import {HelpOutline} from '@vicons/ionicons5'
+import {HelpOutline, ArrowBack, ListOutline, FolderOpenOutline, ChevronForward, SettingsOutline} from '@vicons/ionicons5'
 import {columns, getFn} from './columns';
 import {
   apiCopyFile,
@@ -207,7 +221,10 @@ import {
   apiRenameFile,
   apiRenameFolder,
   apiStoreFolder,
+  apiGetAllProjects,
+  apiGetFolderLists,
 } from '@/api/system/pan';
+import { apiGetFileLists } from '@/api/system/pre';
 import VUpload from '@/components/common/Upload.vue';
 import VMove from '@/components/pan/Move.vue';
 import {NIcon} from "naive-ui";
@@ -228,6 +245,13 @@ const params = reactive({
   folderData: {
     name: '',
   },
+  allStats: {
+    total: 0,
+    passed: 0
+  },
+  search: {
+    username: '',
+  },
   folderLoading: false,
   folderRules: {
     name: {required: true, message: '请输入名称'},
@@ -239,6 +263,7 @@ const params = reactive({
   },
   currentFileId: 0,
   currentFileType: 0,
+  currentProjectId: 0, // 当前项目 ID，用于移动限制
   companyPersonnel: true,
   companyPersonnelInfo: {
     enterprise_person_name: '',
@@ -253,7 +278,28 @@ const params = reactive({
   yearOptions: [] as any[],
   isEditingYear: false,
   isEditingTotal: false,
+  checkProjects: [] as Array<{ id: number; name: string; audit_status?: number }>,
+  loadingProjects: false,
 });
+
+// 加载叶子节点作为审核项目列表
+const loadCheckProjects = async () => {
+  if (params.searchParams.standard_id === 0) return;
+  params.loadingProjects = true;
+  try {
+    const res = await apiGetAllProjects({ standard_id: params.searchParams.standard_id });
+    params.checkProjects = res?.list || [];
+    params.allStats = res?.stats || { total: 0, passed: 0 };
+  } catch (error) {
+    console.error('Failed to load check projects:', error);
+  } finally {
+    params.loadingProjects = false;
+  }
+};
+
+
+// 计算属性：是否在审核项目列表根目录
+const isAtProjectList = computed(() => params.searchParams.folder_id === 0);
 
 const generateYearOptions = () => {
   const currentYear = new Date().getFullYear();
@@ -275,9 +321,17 @@ const actionColumn = reactive({
   key: 'action',
   fixed: 'right',
   render(record) {
-    if(record.type === 1){
-      return
+    if(record.type === 1 && !isAtProjectList.value){
+       // 如果进入了项目内部，且当前行是文件夹，可以进行重命名或删除
+       // 除非它是顶级项目本身（但顶级项目在进入后不会出现在列表行中，列表行里是子文件夹）
+    } else if (record.type === 1 && isAtProjectList.value) {
+       // 如果在根目录，文件夹是审核项目，隐藏所有常规操作（禁止删除/重命名）
+       return null;
     }
+    
+    // 权限校验：顶级项目（parent_id == 0）禁止删除和重命名
+    const isProject = record.type === 1 && (record.parent_id === 0 || record.parent_id === '0');
+
     return h(TableAction as any, {
       style: 'button',
       dropDownActions: [
@@ -285,7 +339,7 @@ const actionColumn = reactive({
           label: '重命名',
           key: 'rename',
           ifShow: () => {
-            return true;
+            return !isProject; // 项目禁止重命名
           },
           auth: ['pan.update'],
         },
@@ -297,19 +351,12 @@ const actionColumn = reactive({
           },
           auth: ['pan.update'],
         },
-        // {
-        //   label: '移动',
-        //   key: 'moveFolder',
-        //   ifShow: () => {
-        //     return record.type === 1;
-        //   },
-        //   auth: ['pan.update'],
-        // },
         {
           label: '移动',
           key: 'moveFile',
           ifShow: () => {
-            return record.type === 2;
+             // 仅限文件或子文件夹移动
+            return !isProject;
           },
           auth: ['pan.update'],
         },
@@ -330,11 +377,9 @@ const actionColumn = reactive({
           label: '删除',
           type: 'error',
           onClick: handleDelete.bind(null, record),
-          // 根据业务控制是否显示 isShow 和 auth 是并且关系
           ifShow: () => {
-              return true;
+             return !isProject; // 项目禁止删除
           },
-          // 根据权限控制是否显示: 有权限，会显示，支持多个
           auth: ['pan.delete'],
         },
       ],
@@ -437,14 +482,15 @@ const handleEdit = (record: any, type: string) => {
         actionRef.value.reload();
       });
       break;
-    case 'moveFolder':
-      params.currentFileType = 1;
-      params.currentFileId = record.id;
-      moveRef.value.openModal();
-      break;
     case 'moveFile':
-      params.currentFileType = 2;
+      params.currentFileType = record.type === 1 ? 'folder' : 'file';
       params.currentFileId = record.id;
+      
+      // 提取当前所属的项目 ID (paths 的第二项通常是顶级项目)
+      if (params.paths.length >= 2) {
+         params.currentProjectId = params.paths[1].id;
+      }
+      
       moveRef.value.openModal();
       break;
     case 'download':
@@ -496,8 +542,8 @@ const reloadTable = () => {
 };
 
 const loadDataTable = async (res) => {
-  if (params.searchParams.standard_id === 0) {
-    return false;
+  if (params.searchParams.standard_id === 0 || params.searchParams.folder_id === 0) {
+    return { list: [], itemCount: 0, paths: [], page: 1 };
   }
   const lists = await apiGetPan({...res, ...params.searchParams});
   params.paths = lists.paths;
@@ -509,52 +555,41 @@ const changeFileList = (id: number, name: string) => {
   params.activeName = name;
   params.searchParams.standard_id = id;
   params.searchParams.folder_id = 0;
-  actionRef.value.reload();
+  loadCheckProjects();
+  if (actionRef.value) {
+    actionRef.value.reload();
+  }
 };
 
-const saveCompanyDurationYear = () => {
-  if (!params.isEditingYear && (params.companyPersonnelInfo.start_year || params.companyPersonnelInfo.end_year)) {
-    params.isEditingYear = true;
-    return;
-  }
-  apiUpdateCompanyDurationYear({
-    start_year: params.companyPersonnelInfo.start_year,
-    end_year: params.companyPersonnelInfo.end_year,
-  }).then(() => {
-    window['$message'].success('修改成功');
-    params.isEditingYear = false;
-  })
-}
 
-const saveCompanyNotSelfTotal = () => {
-  if (!params.isEditingTotal && params.companyPersonnelInfo.not_self_total !== null) {
-    params.isEditingTotal = true;
-    return;
+const handleClickFolder = (id: string | number) => {
+  // 如果 ID 是以 f 开头的（如 f123），则剥离前缀转为数字
+  const targetId = typeof id === 'string' && id.startsWith('f') 
+    ? parseInt(id.replace('f', ''), 10) 
+    : Number(id);
+    
+  params.searchParams.folder_id = targetId;
+  if (actionRef.value) {
+    actionRef.value.reload();
   }
-  apiSaveCompanyNotSelfTotal({
-    not_self_total: params.companyPersonnelInfo.not_self_total,
-  }).then(() => {
-    window['$message'].success('修改成功');
-    params.isEditingTotal = false;
-  })
-}
-
-const handleClickFolder = (id: number) => {
-  params.searchParams.folder_id = id;
-  actionRef.value.reload();
 };
 
 apiGetStandard().then((res) => {
   res.lists.forEach(item => {
     params.fileLists.push(item)
   })
-  params.searchParams.standard_id = params.fileLists[0] ? params.fileLists[0].id : 0;
-  actionRef.value.reload();
+  
   if (params.fileLists.length > 0) {
     params.activeId = params.fileLists[0]?.id;
     params.activeName = params.fileLists[0]?.name;
+    // 显式赋值给搜索参数
+    params.searchParams.standard_id = params.activeId;
+    params.searchParams.folder_id = 0;
+    
+    loadCheckProjects();
   }
 });
+
 // 点击
 const handleClick = (e) => {
   handleClickFolder(e.id);
@@ -608,5 +643,19 @@ apiGetCompanyInfo().then(({data}) => {
 <style scoped lang="less">
 .headerText {
   color: #93694C;
+}
+
+.custom-table {
+  :deep(.n-data-table-td) {
+    padding: 12px 16px;
+  }
+}
+
+.project-card {
+  &:hover {
+    .arrow-icon {
+      color: #18a058 !important;
+    }
+  }
 }
 </style>

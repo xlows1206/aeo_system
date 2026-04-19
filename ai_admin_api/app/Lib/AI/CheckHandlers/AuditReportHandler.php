@@ -18,21 +18,38 @@ class AuditReportHandler extends AbstractHandler
             return "未设置公司存续年份, 无法进行审计报告检查.";
         }
 
-        $errors = [];
-        $foundYears = [];
-        foreach ($data as $item) {
-            $year = $item['year'] ?? '';
-            $result = $item['result'] ?? '';
-            if (($result === true || $result === 'true') && $year) {
-                $foundYears[] = (string)$year;
+        // 结果聚合：按年份存储最新的状态和原因
+        $yearlyResults = [];
+        foreach ($data as $pageResult) {
+            if (!is_array($pageResult)) continue;
+            foreach ($pageResult as $item) {
+                $year = $this->normalizeYear($item['year'] ?? '');
+                if (!$year) continue;
+                
+                // 如果该年份还没存，或者当前存的是 error，则尝试用 pass/fail 覆盖（优先保留有意义的审核结果）
+                if (!isset($yearlyResults[$year]) || $yearlyResults[$year]['status'] === 'error') {
+                    $yearlyResults[$year] = [
+                        'status' => $item['status'] ?? 'error',
+                        'review' => $item['review'] ?? '未知',
+                        'reason' => $item['reason'] ?? '',
+                    ];
+                }
             }
         }
 
-        if (count($foundYears) < count($durationYears)) {
-            foreach ($durationYears as $year) {
-                if (!in_array((string)$year, $foundYears)) {
-                    $errors[] = "{$year}年度审计报告未通过或未读取有效信息";
-                }
+        $errors = [];
+        foreach ($durationYears as $year) {
+            $yearStr = (string)$year;
+            if (!isset($yearlyResults[$yearStr])) {
+                $errors[] = "〔未能读取有效信息〕{$yearStr}年度: 资料中未找到该年度相关的审计报告";
+                continue;
+            }
+
+            $res = $yearlyResults[$yearStr];
+            if ($res['status'] === 'fail') {
+                $errors[] = "〔审计不通过〕{$yearStr}年度: 审计意见为'{$res['review']}'，原因: {$res['reason']}";
+            } elseif ($res['status'] === 'error') {
+                $errors[] = "〔未能读取有效信息〕{$yearStr}年度: {$res['reason']}";
             }
         }
 

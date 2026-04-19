@@ -13,7 +13,7 @@ export function apiStoreCompany(params?) {
   return http.request({
     url: '/v1/company',
     method: 'POST',
-    params,
+    data: params,
   });
 }
 
@@ -21,7 +21,7 @@ export function apiUpdateCompanyDurationYear(params?) {
   return http.request({
     url: '/v1/company/durationYear',
     method: 'PUT',
-    params,
+    data: params,
   });
 }
 
@@ -29,7 +29,7 @@ export function apiSaveCompanyNotSelfTotal(params?) {
   return http.request({
     url: '/v1/company/notSelfTotal',
     method: 'PUT',
-    params,
+    data: params,
   });
 }
 

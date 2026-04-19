@@ -1,6 +1,6 @@
 import { App } from 'vue';
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
-import { RedirectRoute } from '@/router/base';
+import { RedirectRoute, ErrorPageRoute } from '@/router/base';
 import { PageEnum } from '@/enums/pageEnum';
 import { createRouterGuards } from './guards';
 import type { IModuleType } from './types';
@@ -67,7 +67,7 @@ export const SubmitFileRoute: RouteRecordRaw = {
 export const asyncRoutes = [...routeModuleList];
 
 //普通路由 无需验证权限
-export const constantRouter: RouteRecordRaw[] = [LoginRoute, RootRoute, RedirectRoute, RegRoute, ForgotRoute, SubmitFileRoute];
+export const constantRouter: RouteRecordRaw[] = [LoginRoute, RootRoute, RedirectRoute, RegRoute, ForgotRoute, SubmitFileRoute, ErrorPageRoute];
 
 const router = createRouter({
   history: createWebHistory(),

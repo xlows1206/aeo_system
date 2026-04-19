@@ -33,3 +33,12 @@
 - **现遇问题**：配置好跨域与 Nginx 代理后，前端调用接口报 `500 Internal Server Error`。
 - **原因判定**：代码层面引用了 `$company->start_year` 和 `$company->end_year`，这是我们最近新加的业务需求字段。但在向云服务器（宝塔）部署上线时，只传了代码，没有在云服务器的 MySQL 数据库执行同步建表或新增字段的操作。导致 ORM 在执行 Save() 时因为找不到字段而崩溃报错 500。
 - **解决方案要求**：在服务器终端中进入后端目录并执行迁移命令 `php bin/hyperf.php db:migrate`，将数据库结构与最新代码强制对齐。
+### 6. AI 检测层 (多文件冲突与识别)
+- **解决状态**：已修复。Redis Key 现在包含 `file_id`，图片识别支持 URL 后缀检测。
+- **结果示例**：`ai_result:1_1` Hash 中包含 `10_501_1` -> `{"year":"2020",...}`。
+
+### 7. 审核项目识别与可见性层 (重构)
+- **解决状态**：已修复。字段重命名为 `folder_name`；新增 `allProjects` 扁平化接口；`PopulateCheckFoldersCommand` 支持 `standard_id` 继承。
+- **曾遇问题**：后端 405 Method Not Allowed 错误；首页 Vue 组件解析警告；SQL 500 错误 (Union 字段不匹配)。
+- **解决状态**：已彻底修复。通过路由顺序重排解决了 405 问题；修正了前端 `<Button>` 标签与循环索引；对齐了后端 `UNION ALL` 的 SELECT 字段。
+- **值示例**：`fcf` 表中 `{folder_id: 110, folder_name: "审计报告", standard_id: 1}`。

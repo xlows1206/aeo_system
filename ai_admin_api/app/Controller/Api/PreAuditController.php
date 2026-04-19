@@ -89,23 +89,51 @@ class PreAuditController extends BaseController
         });
         foreach ($lists as $list) {
             $infos = json_decode($list->info, true);
-
         }
-        $intData = [];
+        $currentCheckIds = [];
         foreach ($infos as $info) {
+            if (isset($info['id'])) {
+                $currentCheckIds[] = $info['id'];
+            }
             $data = $info['data'];
             $infoIntData = array_filter($data, function ($v) {
                 return is_int($v);
             });
             $intData = array_merge($intData, $infoIntData);
         }
-        $all_files = Db::table('files')
-            ->whereIn('id', $intData)
-            ->select(['*'])
+        $all_files = Db::table('files as f')
+            ->leftJoin('folders as fo', 'fo.id', '=', 'f.folder_id')
+            ->whereIn('f.id', $intData)
+            ->select(['f.*', 'fo.name as folder_name'])
             ->get();
+
+
+        // 获取该预审的最新一条 pre_audit_result 明细（按检查项聚合，仅展示当前提交包含的检查项）
+        $masterId = Db::table('pre_audits')->where('id', $id)->value('master_id');
+        $auditResults = Db::table('pre_audit_results')
+            ->where('master_id', $masterId)
+            ->whereIn('check_id', $currentCheckIds)
+            ->select(['folder_name', 'failed_str', 'is_access', 'check_id'])
+            ->get()
+            ->groupBy('folder_name')
+            ->map(function ($group) {
+                // 取该文件夹下第一条记录的合格状态（同一文件夹下所有记录 is_access 相同）
+                $first = $group->first();
+                $details = [];
+                if ($first->failed_str) {
+                    $details = explode('; ', $first->failed_str);
+                }
+                return [
+                    'folder_name' => $first->folder_name,
+                    'is_access'   => $first->is_access,
+                    'details'     => $details,
+                ];
+            })->values();
+
         return $this->responseService->success([
-            'list' => $lists,
-            'all_files' => $all_files,
+            'list'         => $lists,
+            'all_files'    => $all_files,
+            'audit_results' => $auditResults,
         ]);
     }
 

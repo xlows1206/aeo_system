@@ -53,39 +53,43 @@ class IndexController extends BaseController
             return $this->responseService->error('未授权或用户不存在');
         }
 
-        $folderCounts = Db::table('folders as f')
-            ->leftJoin('folders as ff', 'ff.parent_id', '=', 'f.id')
-            ->whereNull('ff.id')
-            ->groupBy(['f.standard_id'])
-            ->select([Db::raw('count(*) as count'), 'f.standard_id'])
-            ->pluck('count', 'f.standard_id')
+        $masterId = $auth->master_id;
+
+        // 获取所有标准对应的审核项目总数（以 folder_check_files 为准）
+        $folderCounts = Db::table('folder_check_files')
+            ->groupBy(['standard_id'])
+            ->select([Db::raw('count(*) as count'), 'standard_id'])
+            ->pluck('count', 'standard_id')
             ->toArray();
 
-        $accessCounts = Db::table('pre_audit_results as par')
-            ->where('par.is_access', 1)
-            ->where('par.master_id', $auth->master_id)
-            ->groupBy(['par.standard_id'])
-            ->select([Db::raw('count(*) as count'), 'par.standard_id'])
-            ->pluck('count', 'par.standard_id')
+        // 获取当前 master_id 下审核通过的项目数（audit_status = 1）
+        $accessCounts = Db::table('folder_check_files as fcf')
+            ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
+            ->where('f.master_id', $masterId)
+            ->where('f.audit_status', 1)
+            ->groupBy(['fcf.standard_id'])
+            ->select([Db::raw('count(*) as count'), 'fcf.standard_id'])
+            ->pluck('count', 'fcf.standard_id')
             ->toArray();
 
         $rate = [];
         $standards = Db::table('standards')->get();
         foreach ($standards as $standard) {
-            $rate[$standard->id]['percentage'] = (isset($accessCounts[$standard->id]) && isset($folderCounts[$standard->id])) ? round(($accessCounts[$standard->id] / $folderCounts[$standard->id]) * 100, 2) : 0;
-            $rate[$standard->id]['completed'] = $accessCounts[$standard->id] ?? 0;
-            $rate[$standard->id]['total'] = $folderCounts[$standard->id] ?? 0;
+            $currentTotal = (int)($folderCounts[$standard->id] ?? 0);
+            $currentPassed = (int)($accessCounts[$standard->id] ?? 0);
+            
+            $rate[$standard->id]['percentage'] = $currentTotal > 0 ? round(($currentPassed / $currentTotal) * 100, 2) : 0;
+            $rate[$standard->id]['completed'] = $currentPassed;
+            $rate[$standard->id]['total'] = $currentTotal;
             $rate[$standard->id]['name'] = $standard->name;
         }
 
-        $allFolderCounts = Db::table('folders as f')
-            ->leftJoin('folders as ff', 'ff.parent_id', '=', 'f.id')
-            ->whereNull('ff.id')
-            ->count();
-
-        $allAccessCounts = Db::table('pre_audit_results')
-            ->where('master_id', $auth->master_id)
-            ->where('is_access', 1)
+        // 计算全量进度
+        $allFolderCounts = Db::table('folder_check_files')->count();
+        $allAccessCounts = Db::table('folder_check_files as fcf')
+            ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
+            ->where('f.master_id', $masterId)
+            ->where('f.audit_status', 1)
             ->count();
 
         return $this->responseService->success([

@@ -1,0 +1,11 @@
+SET FOREIGN_KEY_CHECKS = 0;
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (127, 127, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (264, 264, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (265, 265, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (266, 266, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (267, 267, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (268, 268, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (300, 300, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (301, 301, 0);
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES (300, 301, 1);
+SET FOREIGN_KEY_CHECKS = 1;

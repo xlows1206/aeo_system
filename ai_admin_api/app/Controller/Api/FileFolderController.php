@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Support\FolderDisplayName;
 use App\Controller\BaseController;
-use App\Model\Folder;
 use Hyperf\DbConnection\Db;
 use Hyperf\HttpServer\Annotation\Controller;
 use Hyperf\HttpServer\Annotation\Middleware;
@@ -16,97 +16,73 @@ use Hyperf\HttpServer\Contract\RequestInterface;
 class FileFolderController extends BaseController
 {
     #[RequestMapping(path: "lists", methods: "get")]
-    public function index(RequestInterface $request)
+    public function lists(RequestInterface $request)
     {
-        $lists = Db::table('folders')
-//            ->when($auth->parent_id == 0, function ($q) use ($masterId) {
-//                $q->where('master_id', $masterId);
-//            }, function ($q) use ($userId) {
-//                $q->where('user_id', $userId);
-//            })
-//            ->where('master_id', $masterId)
-            ->oldest('id')
-            ->get()->prepend(collect(['id' => 0, 'name' => '根目录', 'parent_id' => 'x']))
+        $auth = $request->input('Auth');
+        $userId = $auth->id;
+        $standardId = $request->input('standard_id', 0);
+        $masterId = $auth->master_id;
+
+        // 查询所有审核项目文件夹的 ID（以 folder_check_files 为权威来源）
+        $checkFolderIds = Db::table('folder_check_files')
+            ->pluck('folder_id')
+            ->map(fn ($id) => (int)$id)
             ->toArray();
-        return $this->responseService->success(buildTree($lists));
+        $checkFolderIdMap = array_flip($checkFolderIds);
+
+        $folders = Db::table('folders as f')
+            ->where('f.standard_id', $standardId)
+            ->select('f.*')
+            ->get();
+
+        $folderNameMap = $folders->pluck('name', 'id')->toArray();
+
+        $folders = $folders
+            ->map(function ($i) use ($checkFolderIds, $checkFolderIdMap, $folderNameMap) {
+                $name = $i->name;
+                if (isset($checkFolderIdMap[(int)$i->id])) {
+                    $name = FolderDisplayName::format($i->name, $folderNameMap[$i->parent_id] ?? null);
+                }
+
+                return [
+                    'id'              => 'f' . $i->id,
+                    'type'            => 'folder',
+                    'parent_id'       => 'f' . $i->parent_id,
+                    'name'            => $name,
+                    'is_check_folder' => isset($checkFolderIdMap[(int)$i->id]),
+                    'audit_status'    => $i->audit_status,
+                ];
+            })
+            ->toArray();
+
+        $files = Db::table('files')
+            ->when($auth->parent_id == 0, function ($q) use ($masterId) {
+                $q->where('master_id', $masterId);
+            }, function ($q) use ($userId) {
+                $q->where('user_id', $userId);
+            })
+            ->where('standard_id', $standardId)
+            ->get()
+            ->map(function ($i) {
+                return [
+                    'id' => $i->id,
+                    'type' => 'file',
+                    'parent_id' => 'f' . $i->folder_id,
+                    'name' => $i->name,
+                ];
+            })
+            ->toArray();
+
+        $totalCount = count($folders);
+        $passedCount = collect($folders)->where('audit_status', 1)->count();
+
+        return $this->responseService->success([
+            'tree' => buildTree(array_merge($folders, $files, [['id' => 'f0', 'name' => '根目录', 'type' => 'folder', 'parent_id' => 'x']])),
+            'stats' => [
+                'total' => $totalCount,
+                'passed' => $passedCount,
+            ],
+        ]);
     }
-
-//    #[RequestMapping(path: "", methods: "post")]
-//    public function store(RequestInterface $request)
-//    {
-//        $auth = $request->input('Auth');
-//        $folder = new Folder();
-//        $folder->name = $request->input('name');
-//        $folder->standard_id = $request->input('standard_id');
-//        $folder->user_id = $auth->id;
-//        $folder->master_id = $auth->master_id;
-//        $folder->parent_id = $request->input('parent_id');
-//        $folder->save();
-//        return $this->responseService->success();
-//    }
-
-//    #[RequestMapping(path: "{id}", methods: "put")]
-//    public function update(RequestInterface $request, $id)
-//    {
-//        $folder = Folder::find($id);
-//        $folder->name = $request->input('name');
-//        $folder->standard_id = $request->input('standard_id');
-//        $folder->parent_id = $request->input('parent_id');
-//        $folder->save();
-//        return $this->responseService->success();
-//    }
-//
-//    #[RequestMapping(path: "{id}/rename", methods: "patch")]
-//    public function rename(RequestInterface $request, $id)
-//    {
-//        $folder = Folder::find($id);
-//        $folder->name = $request->input('name');
-//        $folder->save();
-//        return $this->responseService->success();
-//    }
-//
-//    #[RequestMapping(path: "{id}", methods: "delete")]
-//    public function destroy($id)
-//    {
-//        $childIds = Db::table('folder_closure')
-//            ->where('ancestor', $id)
-//            ->pluck('descendant')
-//            ->toArray();
-//
-//        if (
-//            Db::table('files')
-//                ->whereIn('folder_id', $childIds)
-//                ->count() > 0
-//        ) {
-//            return $this->responseService->error('请先清空该目录下的文件');
-//        }
-//
-//        Folder::destroy($id);
-//        return $this->responseService->success();
-//    }
-//
-//    #[RequestMapping(path: "{id}/move", methods: "patch")]
-//    public function move(RequestInterface $request, $id)
-//    {
-//        $folder = Folder::find($id);
-//        $childIds = Db::table('folder_closure')
-//            ->where('ancestor', $id)
-//            ->pluck('descendant')
-//            ->toArray();
-//
-//        $fileFolderId = $request->input('folder_id');
-//        if (in_array($fileFolderId, $childIds)) {
-//            return $this->responseService->error('不能移动到其子目录下');
-//        }
-//
-//        $moveFolder = Folder::find($fileFolderId);
-//
-//        if ($folder->standard_id != $moveFolder->standard_id) {
-//            return $this->responseService->error('不能移动到不同标准目录下');
-//        }
-//
-//        $folder->parent_id = $fileFolderId;
-//        $folder->save();
-//        return $this->responseService->success();
-//    }
+    }
 }

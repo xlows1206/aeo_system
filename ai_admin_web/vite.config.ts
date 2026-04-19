@@ -46,6 +46,8 @@ export default ({ command, mode }: ConfigEnv): UserConfig => {
     plugins: createVitePlugins(viteEnv, isBuild, prodMock),
     define: {
       __APP_INFO__: JSON.stringify(__APP_INFO__),
+      __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
+      __CACHE_BUST__: JSON.stringify(Date.now()),
     },
     server: {
       host: true,

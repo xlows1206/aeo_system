@@ -86,13 +86,13 @@
               </div>
             </div>
             <div class="mt-8 text-center" v-show="params.showMore">
-              <Button
+              <n-button
                 class="border-amber-300 text-amber-700 hover:bg-amber-50 bg-transparent px-8 py-2 rounded-lg font-medium"
                 style="border: 1px solid #F9EBA9;"
                 @click="loadMore"
               >
                 查看更多新闻
-              </Button>
+              </n-button>
             </div>
           </div>
         </div>
@@ -142,7 +142,7 @@
                 <p class="text-sm text-amber-700 mb-4">
                   查看最新的AEO认证标准要求，了解申请流程和注意事项</p>
               </div>
-              <Button
+              <n-button
                 @click="openSubmitFile"
                 class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-3 text-base font-medium  rounded-lg">
                 <n-icon class="mr-2 h-5 w-5" size="20" color="#fff">
@@ -158,7 +158,7 @@
                   </svg>
                 </n-icon>
                 提交AEO认证
-              </Button>
+              </n-button>
             </div>
           </div>
         </div>
@@ -191,7 +191,7 @@
           </div>
           <div class="p-6">
             <div class="space-y-5">
-              <div v-for="item in params.documentProgress" :key=index class="space-y-3">
+              <div v-for="(item, index) in params.documentProgress" :key="index" class="space-y-3">
                 <div class="flex items-center justify-between">
                   <span class="text-amber-800 font-medium">{{ item.name }}</span>
                   <span class="text-sm text-amber-600 font-medium">
@@ -212,7 +212,7 @@
             </div>
             <div class="mt-8 flex gap-3">
 
-              <Button
+              <n-button
                 class="w-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg font-medium" @click="jumpUpload">
                 <n-icon size="18" color="#fff">
                   <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -227,14 +227,14 @@
                 </n-icon>
 
                 去处理/上传
-              </Button>
-              <Button
+              </n-button>
+              <n-button
                 class="border-amber-300 text-amber-700 hover:bg-amber-50 bg-transparent px-3 rounded-lg font-medium"
                 style="border: 1px solid #F9EBA9;width: 150px;padding-top: 10px;padding-bottom: 10px;"
                 @click="showInfo"
               >
                 查看详情
-              </Button>
+              </n-button>
             </div>
           </div>
         </div>

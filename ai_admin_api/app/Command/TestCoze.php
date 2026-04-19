@@ -103,10 +103,10 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                          报告中有文字包括“无保留意见”认定通过，且不存在“无法出具”、“有保留意见”内容，,对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
-                                          "year": "{year}",
-                                          "result": "{result}",
-                                          }，禁止输出其他内容';
+                                           "folder_name": "{folder_name}",
+                                           "year": "{year}",
+                                           "result": "{result}",
+                                           }，禁止输出其他内容';
 
                                 return $this->extracted($folder_name, $aiStr, $file_list, $finance, $base_url, $model_name, [1, 2, 3]);
                             });
@@ -142,7 +142,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“操作手册”或“操作说明”或“用户手册”内容,对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -156,7 +156,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“信息安全管理”内容,对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -170,7 +170,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“员工手册”内容,对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
                                 return $this->extracted($folder_name, $aiStr, $file_list, $finance, $base_url, $model_name, [1]);
@@ -188,7 +188,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“贸易安全”内容,对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -203,7 +203,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“关企联系工作”或“关企联系合作机制”内容,对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -218,7 +218,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“单证复核流程”内容, 对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -233,7 +233,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“电子单证归档管理”内容, 对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -248,7 +248,7 @@ class TestCoze extends HyperfCommand
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你识别文件中是否包含“HS CODE/原产国/MSDS/货物性质”内容, 对应结果 result 为 true 或者 false， 请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "result": "{result}",
                                           }，禁止输出其他内容';
 
@@ -256,14 +256,14 @@ class TestCoze extends HyperfCommand
                             });
                         }
 
-                        if ($folder_name == '6-16&17&18') {
+                        if ($folder_name == '6-16&17&18' || $folder_name == '报关单行政处罚合规') {
                             $parallel->add(function () use ($folder_name, $file_list, $finance, $base_url, $model_name) {
                                 $aiStr = '
                                         # 角色
                                           你是一个专业且谨慎仔细的文员，非常擅长于从PDF、DOCX、图片等文档资料中抽取相关信息。
                                           # 任务
                                           请你提取文件中的处罚金额，结果为penalty_amount，单位为万元保留小数点后一位，并给出你的推测依据，并附带原文信息，依据为base_on，请你以下面的JSON格式输出数据 {
-                                          "file_name": "{file_name}",
+                                          "folder_name": "{folder_name}",
                                           "penalty_amount": "{penalty_amount}",
                                           "base_on": "{base_on}",
                                           }，禁止输出其他内容';
@@ -285,7 +285,7 @@ class TestCoze extends HyperfCommand
                                           请你以下面的JSON格式输出数据：
                                            [
                                             {
-                                            "file_name": "{file_name}",
+                                            "folder_name": "{folder_name}",
                                             "result": "True|False"，
                                             "name": "{姓名}",
                                             "card": "{身份证号码}"

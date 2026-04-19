@@ -42,21 +42,29 @@ class User extends Model
 
     public function getUserPermissionPath(): \Hyperf\Collection\Collection
     {
-        return Db::table('permissions as p')
-            ->leftJoin('role_permission as rp', 'rp.permission_id', '=', 'p.id')
-            ->leftJoin('roles as r', 'r.id', '=', 'rp.role_id')
-            ->where('r.id', $this->role_id)
-            ->select('p.path as value', 'p.name as label')
+        $query = Db::table('permissions as p');
+        
+        if ($this->standing !== 1) {
+            $query->leftJoin('role_permission as rp', 'rp.permission_id', '=', 'p.id')
+                ->leftJoin('roles as r', 'r.id', '=', 'rp.role_id')
+                ->where('r.id', $this->role_id);
+        }
+        
+        return $query->select('p.path as value', 'p.name as label')
             ->get();
     }
 
     public function getUserPermission(): \Hyperf\Collection\Collection
     {
-        $lists =  Db::table('permissions as p')
-            ->leftJoin('role_permission as rp', 'rp.permission_id', '=', 'p.id')
-            ->leftJoin('roles as r', 'r.id', '=', 'rp.role_id')
-            ->where('r.id', $this->role_id)
-            ->oldest('p.rank')
+        $query = Db::table('permissions as p');
+        
+        if ($this->standing !== 1) {
+            $query->leftJoin('role_permission as rp', 'rp.permission_id', '=', 'p.id')
+                ->leftJoin('roles as r', 'r.id', '=', 'rp.role_id')
+                ->where('r.id', $this->role_id);
+        }
+
+        $lists = $query->oldest('p.rank')
             ->oldest('p.id')
             ->select('p.*')
             ->get();

@@ -95,10 +95,11 @@ export function apiDeleteFolder(id) {
   });
 }
 
-export function apiGetFolderLists() {
+export function apiGetFolderLists(params?) {
   return http.request({
     url: `/v1/folder/lists`,
     method: 'get',
+    params
   });
 }
 
@@ -115,5 +116,22 @@ export function apiGetAllStandard(params?) {
     url: `/v1/file/allStandard`,
     method: 'get',
     params
+  });
+}
+
+export function apiGetAllProjects(params) {
+  return http.request({
+    url: `/v1/file/projects/all`,
+    method: 'get',
+    params
+  });
+}
+
+export function apiDownloadPassedPackage(params) {
+  return http.request({
+    url: `/v1/file/downloadPassedPackage`,
+    method: 'get',
+    params,
+    responseType: 'blob'
   });
 }

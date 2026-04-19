@@ -6,8 +6,11 @@ namespace App\Controller\Api;
 
 use App\Controller\BaseController;
 use App\Lib\Log;
+use App\Model\Company;
 use App\Model\File;
 use App\Model\Folder;
+use App\Support\FolderDisplayName;
+use App\Service\ZipService;
 use Hyperf\DbConnection\Db;
 use Hyperf\HttpServer\Annotation\Controller;
 use Hyperf\HttpServer\Annotation\Middleware;
@@ -18,6 +21,76 @@ use function Hyperf\Support\env;
 #[Controller(prefix: 'api/v1/file'), Middleware('App\Middleware\UserAuthMiddleware')]
 class FileController extends BaseController
 {
+    #[RequestMapping(path: "projects/all", methods: "get")]
+    public function allProjects(RequestInterface $request)
+    {
+        $standardId = (int)$request->input('standard_id', 0);
+        $auth = $request->input('Auth');
+        $masterId = $auth->master_id;
+
+        $query = Db::table('folder_check_files as fcf')
+            ->leftJoin('folders as f', 'f.id', '=', 'fcf.folder_id')
+            ->leftJoin('folders as p', 'p.id', '=', 'f.parent_id')
+            ->where('fcf.standard_id', $standardId);
+
+        // 如果是单项标准(ID=6)，根据公司设置的项目进行过滤
+        if ($standardId === 6) {
+            $company = Company::where('master_id', $masterId)->first();
+            if ($company && !empty($company->bind_projects)) {
+                $bindIds = explode(',', (string)$company->bind_projects);
+                $query->whereIn('fcf.id', $bindIds);
+            }
+        }
+
+        $projects = $query->select('f.*', 'p.name as parent_name', 'fcf.id as fcf_id')
+            ->get();
+
+        $processedFolders = [];
+        $passedCount = 0;
+
+        foreach ($projects as $f) {
+            $status = (int)$f->audit_status;
+            if ($status === 1) {
+                $passedCount++;
+            }
+
+            $processedFolders[] = [
+                'id' => 'f' . $f->id,
+                'name' => FolderDisplayName::format($f->name, $f->parent_name),
+                'audit_status' => $status,
+                'parent_id' => 'f' . $f->parent_id,
+                'description' => $f->description ?? '',
+            ];
+        }
+
+        $weights = [
+            '一' => 1, '二' => 2, '三' => 3, '四' => 4, '五' => 5,
+            '六' => 6, '七' => 7, '八' => 8, '九' => 9, '十' => 10,
+        ];
+
+        usort($processedFolders, function ($a, $b) use ($weights) {
+            $charA = mb_substr($a['name'] ?? '', 0, 1);
+            $charB = mb_substr($b['name'] ?? '', 0, 1);
+            
+            $weightA = $weights[$charA] ?? 99;
+            $weightB = $weights[$charB] ?? 99;
+            
+            if ($weightA !== $weightB) {
+                return $weightA <=> $weightB;
+            }
+            
+            return strnatcmp($a['name'], $b['name']);
+        });
+
+        return $this->responseService->success([
+            'list' => $processedFolders,
+            'stats' => [
+                'total' => count($processedFolders),
+                'passed' => $passedCount,
+            ],
+        ]);
+    }
+
     #[RequestMapping(path: "", methods: "get")]
     public function index(RequestInterface $request)
     {
@@ -32,24 +105,55 @@ class FileController extends BaseController
         $folder = Folder::find($folderId);
 
         $standardId = $request->input('standard_id', 0);
+        $checkFolderIds = Db::table('folder_check_files')
+            ->pluck('folder_id')
+            ->map(fn ($id) => (int)$id)
+            ->toArray();
+        $checkFolderIdMap = array_flip($checkFolderIds);
 
         $paths = [['id' => 0, 'name' => '全部']];
         if ($folder) {
-            $paths = array_merge($paths, $folder->getAncestorsAndSelf()->toArray());
+            $ancestorPaths = $folder->getAncestorsAndSelf()
+                ->map(function ($item) use ($checkFolderIdMap) {
+                    if (isset($checkFolderIdMap[(int)$item->id])) {
+                        $item->name = FolderDisplayName::format($item->name, null);
+                    }
+
+                    return $item;
+                })
+                ->toArray();
+
+            $pathNameMap = [];
+            foreach ($ancestorPaths as $pathItem) {
+                $pathNameMap[(int)$pathItem->id] = $pathItem->name;
+            }
+            foreach ($ancestorPaths as &$pathItem) {
+                if (isset($checkFolderIdMap[(int)$pathItem->id])) {
+                    $pathItem->name = FolderDisplayName::format(
+                        $pathItem->name,
+                        $pathNameMap[(int)$pathItem->parent_id] ?? null
+                    );
+                }
+            }
+            unset($pathItem);
+
+            $paths = array_merge($paths, $ancestorPaths);
         }
 
         $folders = Db::table('folders')
-//            ->when($auth->parent_id == 0, function ($q) use ($masterId) {
-//                // 主账号
-//                $q->where('master_id', $masterId);
-//            }, function ($q) use ($userId) {
-//                $q->where('user_id', $userId);
-//            })
-//            ->where('master_id', $masterId)
             ->where('parent_id', $folderId)
             ->where('standard_id', $standardId)
-            ->select('id', 'name', Db::raw('1 as type'), Db::raw("'' as size"), Db::raw("'' as url"), Db::raw("'' as suffix"), 'updated_at');
-        $files = Db::table('files')
+            ->select('id', 'name', 'parent_id', Db::raw('1 as type'), Db::raw("'' as size"), Db::raw("'' as url"), Db::raw("'' as suffix"), 'updated_at')
+            ->get()
+            ->map(function ($item) use ($checkFolderIdMap, $folder) {
+                if (isset($checkFolderIdMap[(int)$item->id])) {
+                    $item->name = FolderDisplayName::format($item->name, $folder?->name);
+                }
+
+                return $item;
+            });
+
+        $filesQuery = Db::table('files')
             ->when($auth->parent_id == 0, function ($q) use ($masterId) {
                 // 主账号
                 $q->where('master_id', $masterId);
@@ -58,11 +162,19 @@ class FileController extends BaseController
             })
             ->where('folder_id', $folderId)
             ->where('standard_id', $standardId)
-            ->select('id', 'name', Db::raw('2 as type'), 'size', 'url', 'suffix', 'updated_at')
-            ->unionAll($folders);
+            ->select('id', 'name', 'folder_id as parent_id', Db::raw('2 as type'), 'size', 'url', 'suffix', 'updated_at');
 
-        $total = $files->count();
-        $lists = $files->forPage($page, $size)->oldest('type')->latest('updated_at')->get();
+        $files = $filesQuery->get();
+        $lists = $folders->concat($files)->values();
+        $lists = $lists->sort(function ($a, $b) {
+            if ((int)$a->type !== (int)$b->type) {
+                return (int)$a->type <=> (int)$b->type;
+            }
+
+            return strtotime((string)$b->updated_at) <=> strtotime((string)$a->updated_at);
+        })->values();
+        $total = $lists->count();
+        $lists = $lists->forPage((int)$page, (int)$size)->values();
 
         return $this->responseService->success([
             'list' => $lists,
@@ -80,23 +192,44 @@ class FileController extends BaseController
         $standardId = $request->input('standard_id', 0);
         $masterId = $auth->master_id;
 
+        // 查询所有审核项目文件夹的 ID（以 folder_check_files 为权威来源）
+        $query = Db::table('folder_check_files')->where('standard_id', $standardId);
+        
+        // 如果是单项标准(ID=6)，进行过滤
+        if ($standardId === 6) {
+            $company = Company::where('master_id', $masterId)->first();
+            if ($company && !empty($company->bind_projects)) {
+                $bindIds = explode(',', (string)$company->bind_projects);
+                $query->whereIn('id', $bindIds);
+            }
+        }
+
+        $checkFolderIds = $query->pluck('folder_id')
+            ->map(fn ($id) => (int)$id)
+            ->toArray();
+        $checkFolderIdMap = array_flip($checkFolderIds);
+
         $folders = Db::table('folders as f')
-//            ->when($auth->parent_id == 0, function ($q) use ($masterId) {
-//                // 主账号
-//                $q->where('master_id', $masterId);
-//            }, function ($q) use ($userId) {
-//                $q->where('user_id', $userId);
-//            })
-//            ->where('master_id', $masterId)
             ->where('f.standard_id', $standardId)
             ->select('f.*')
-            ->get()
-            ->map(function ($i) {
+            ->get();
+
+        $folderNameMap = $folders->pluck('name', 'id')->toArray();
+
+        $folders = $folders
+            ->map(function ($i) use ($checkFolderIds, $checkFolderIdMap, $folderNameMap) {
+                $name = $i->name;
+                if (isset($checkFolderIdMap[(int)$i->id])) {
+                    $name = FolderDisplayName::format($i->name, $folderNameMap[$i->parent_id] ?? null);
+                }
+
                 return [
-                    'id' => 'f' . $i->id,
-                    'type' => 'folder',
-                    'parent_id' => 'f' . $i->parent_id,
-                    'name' => $i->name,
+                    'id'              => 'f' . $i->id,
+                    'type'            => 'folder',
+                    'parent_id'       => 'f' . $i->parent_id,
+                    'name'            => $name,
+                    'is_check_folder' => isset($checkFolderIdMap[(int)$i->id]),
+                    'audit_status'    => $i->audit_status,
                 ];
             })
             ->toArray();
@@ -112,15 +245,24 @@ class FileController extends BaseController
             ->get()
             ->map(function ($i) {
                 return [
-                    'id' => $i->id,
-                    'type' => 'file',
+                    'id'        => $i->id,
+                    'type'      => 'file',
                     'parent_id' => 'f' . $i->folder_id,
-                    'name' => $i->name,
+                    'name'      => $i->name,
                 ];
             })
             ->toArray();
 
-        return $this->responseService->success(buildTree(array_merge($folders, $files, [['id' => 'f0', 'name' => '根目录', 'type' => 'folder', 'parent_id' => 'x']])));
+        $totalCount = count($folders);
+        $passedCount = collect($folders)->where('audit_status', 1)->count();
+
+        return $this->responseService->success([
+            'tree' => buildTree(array_merge($folders, $files, [['id' => 'f0', 'name' => '根目录', 'type' => 'folder', 'parent_id' => 'x']])),
+            'stats' => [
+                'total' => $totalCount,
+                'passed' => $passedCount,
+            ]
+        ]);
 
     }
 
@@ -288,5 +430,21 @@ class FileController extends BaseController
         return $this->responseService->success([
             'lists' => $files
         ]);
+    }
+
+    #[RequestMapping(path: "downloadPassedPackage", methods: "get")]
+    public function downloadPassedPackage(RequestInterface $request, ZipService $zipService)
+    {
+        $auth = $request->input('Auth');
+        $masterId = $auth->master_id;
+        $standardId = $request->input('standard_id', 0);
+
+        try {
+            $zipPath = $zipService->packagePassedFiles((int)$masterId, (int)$standardId);
+            $fileName = "AEO资料包_" . date('YmdHis') . ".zip";
+            return $this->responseService->download($zipPath, $fileName);
+        } catch (\Exception $e) {
+            return $this->responseService->error($e->getMessage());
+        }
     }
 }

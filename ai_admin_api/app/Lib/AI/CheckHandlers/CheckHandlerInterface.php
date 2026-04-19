@@ -27,7 +27,15 @@ interface CheckHandlerInterface
      * 执行业务审计逻辑
      * @param array $data 聚合后的 AI 结果数据
      * @param array $context 包含公司信息、存续年份等业务上下文
-     * @return string|null 失败原因字符串，通过则返回 null
+     * @return string|null 展示用的结果字符串（始终返回所有年份），无数据时返回 null
      */
     public function performAudit(array $data, array $context): ?string;
+
+    /**
+     * 判断该检测项是否通过（与 performAudit 显示内容解耦）
+     * @param array $data 聚合后的 AI 结果数据
+     * @param array $context 包含公司信息、存续年份等业务上下文
+     * @return bool true 为通过，false 为不通过
+     */
+    public function isAccessible(array $data, array $context): bool;
 }

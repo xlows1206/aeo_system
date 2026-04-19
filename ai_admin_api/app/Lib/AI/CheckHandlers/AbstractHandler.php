@@ -46,4 +46,37 @@ abstract class AbstractHandler implements CheckHandlerInterface
     {
         return $rawResult;
     }
+
+    /**
+     * 默认合格判定：performAudit 返回 null 则视为通过，返回字符串则视为失败。
+     */
+    public function isAccessible(array $data, array $context): bool
+    {
+        return $this->performAudit($data, $context) === null;
+    }
+
+    /**
+     * 年份标准化：提取字符串中的纯数字部分 (如 "2020年" -> "2020")
+     */
+    protected function normalizeYear($year): string
+    {
+        return preg_replace('/[^0-9]/', '', (string)$year);
+    }
+
+    /**
+     * 数值鲁棒性解析：提取字符串中的数字、小数点和负号，忽略单位和特殊符号
+     */
+    protected function normalizeNumber($val): float
+    {
+        if ($val === null || $val === '') {
+            return 0.0;
+        }
+        if (is_numeric($val)) {
+            return (float)$val;
+        }
+        $val = (string)$val;
+        // 移除逗号、单位(如万元)等，保留数字、小数点和负号
+        $clean = preg_replace('/[^\d\.-]/', '', $val);
+        return $clean === '' ? 0.0 : (float)$clean;
+    }
 }

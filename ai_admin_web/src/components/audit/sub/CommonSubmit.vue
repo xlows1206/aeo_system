@@ -27,9 +27,8 @@
     </n-card>
 
     <div style="float: right">
-      <n-button type="error" @click="onSubmit(1)">不达标</n-button>
-      <n-button type="warning" style="margin-left: 15px" @click="onSubmit(2)">基本达标</n-button>
-      <n-button type="success" style="margin-left: 15px" @click="onSubmit(3)">达标</n-button>
+      <n-button type="error" @click="onSubmit(1)">不合格</n-button>
+      <n-button type="success" style="margin-left: 15px" @click="onSubmit(3)">合格</n-button>
     </div>
   </div>
 </template>
@@ -63,7 +62,8 @@
 
   const params = reactive({
     currentData: [],
-    status_cn: ['正在审核', '不达标', '基本达标', '达标'],
+    status_cn: ['正在审核', '不合格', '', '合格'],
+
     status_type: ['default', 'error', 'warning', 'success'],
     files: [],
   });

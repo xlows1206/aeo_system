@@ -35,7 +35,7 @@
   const params = reactive({
     active: false,
     lists: [],
-    status_cn: ['正在审核', '不达标', '基本达标', '达标'],
+    status_cn: ['正在审核', '不合格', '', '合格'],
     status_type: ['default', 'error', 'warning', 'success'],
   });
 

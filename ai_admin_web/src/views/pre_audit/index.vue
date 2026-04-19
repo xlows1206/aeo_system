@@ -27,21 +27,29 @@
           </template>
           提交预审
         </n-button>
-        <n-icon
-          class="cursor-pointer"
-          @click="reloadTable"
-          size="20" color="#D6B164">
-          <RefreshCcw/>
-        </n-icon>
       </div>
       <div class="p-6">
         <div class="space-y-5">
       <div class="flex items-center justify-between">
-
-        <span class="text-amber-800 font-medium">{{ params.totalRate.name }} 通过预审</span>
-        <span class="text-sm text-amber-600 font-medium">
-                            {{ params.totalRate.completed }}/{{ params.totalRate.total }} ({{ params.totalRate.percentage }}%)
-                          </span>
+        <div class="flex items-center gap-2">
+          <span class="text-amber-800 font-medium">AI 审核通过进度</span>
+          <span class="text-sm text-amber-600 font-medium">
+            {{ params.totalRate.completed }}/{{ params.totalRate.total }} ({{ params.totalRate.percentage }}%)
+          </span>
+        </div>
+        
+        <!-- 下载AEO资料按钮 -->
+        <n-button 
+          type="warning" 
+          secondary
+          :disabled="params.totalRate.percentage < 100"
+          @click="handleDownloadAEO"
+        >
+          <template #icon>
+            <n-icon><DownloadOutlined /></n-icon>
+          </template>
+          下载 AEO 资料
+        </n-button>
       </div>
             <n-progress
               type="line"
@@ -76,13 +84,13 @@ import { useIntervalFn } from '@vueuse/core';
 import {BasicTable, TableAction} from '@/components/Table';
 import { FormSchema, useForm} from '@/components/Form/index';
 import {columns} from './columns';
-import {PlusOutlined} from '@vicons/antd';
+import {PlusOutlined, DownloadOutlined} from '@vicons/antd';
 import VPreAuditCreate from '@/components/pre_audit/Create.vue';
 import VPreAuditInfo from '@/components/pre_audit/Info.vue';
 import {apiGetPreAudit, apiStoreSubmitAudit} from '@/api/system/pre';
-import {RefreshCcw} from "lucide-vue-next";
 import {NIcon} from "naive-ui";
 import {apiAccessRate} from '@/api/system/home'
+import {apiDownloadPassedPackage} from '@/api/system/pan'
 
 
 const schemas: FormSchema[] = [
@@ -120,17 +128,7 @@ const actionColumn = reactive({
           },
           auth: ['pre_audit.info'],
         },
-        {
-          label: '重新提审',
-          type: 'warning',
-          onClick: handleEdit.bind(null, record),
-          // 根据业务控制是否显示 isShow 和 auth 是并且关系
-          ifShow: () => {
-            return record.status < 3;
-          },
-          // 根据权限控制是否显示: 有权限，会显示，支持多个
-          auth: ['pre_audit.store'],
-        },
+
         // {
         //   label: '提交海关',
         //   type: 'success',
@@ -160,7 +158,7 @@ const params = reactive({
   status: [
     {label: '正在审核', value: 0},
     {label: '不达标', value: 1},
-    {label: '基本达标', value: 2},
+    {label: '不合格', value: 1},
     {label: '达标', value: 3},
   ],
   totalRate: {
@@ -211,6 +209,30 @@ function handleSubmitPre(record: Recordable) {
     .catch((err) => {
       window['$message'].error(err.message);
     });
+}
+
+const handleDownloadAEO = async () => {
+  const msg = window['$message'].loading('正在打包资料，请稍候...', { duration: 0 });
+  try {
+    // 假设当前正在查看的标准ID在 params.search.standard_id 中，或者我们需要从 params.totalRate 获取
+    // 从 pre_audit_results 表结构看，所有的项目对应一个 master_id
+    // 我们这里传 0 表示打包所有或者您需要一个特定的 standard_id
+    // 根据 IndexController，all_rate 统计的是全部，所以这里我们可能需要根据当前选中的标准来传参数
+    // 或者目前需求是全量打包，我们可以不传或者后端默认全部
+    const res: any = await apiDownloadPassedPackage({ standard_id: params.totalRate.id || 0 });
+    const blob = new Blob([res], { type: 'application/zip' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `AEO审核通过资料_${new Date().getTime()}.zip`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+    msg.destroy();
+    window['$message'].success('下载成功');
+  } catch (error: any) {
+    msg.destroy();
+    window['$message'].error('打包失败: ' + (error.message || '未知错误'));
+  }
 }
 
 const loadRate = () => {

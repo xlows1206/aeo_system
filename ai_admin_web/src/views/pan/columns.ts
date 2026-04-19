@@ -1,8 +1,9 @@
 import type {BasicColumn} from '@/components/Table';
 import {h, ref} from 'vue'
 import {NIcon, NButton} from "naive-ui";
-import {FolderOpenOutline} from '@vicons/ionicons5'
+import {FolderOpenOutline, ArchiveOutline} from '@vicons/ionicons5'
 import {FileOutlined} from '@vicons/antd'
+import { extractProjectName } from '@/utils/index';
 
 export interface ListData {
   name: string;
@@ -21,6 +22,9 @@ export const columns: BasicColumn<ListData>[] = [
     key: 'name',
     width: 150,
     render(row) {
+      // 判断是否为顶级审核项目 (parent_id 为 0 或 字符串 '0')
+      const isProject = row.type === 1 && (row.parent_id === 0 || row.parent_id === '0');
+      
       return h(NButton, {
         text: true,
         style: {'padding-left': '1px'},
@@ -28,11 +32,18 @@ export const columns: BasicColumn<ListData>[] = [
       }, {
         icon: () => h(NIcon, {
           size: 20,
-          component: row.type === 1 ? FolderOpenOutline : FileOutlined,
+          color: isProject ? '#18a058' : '#D6B164', // 项目使用绿色系标识
+          component: row.type === 1 
+            ? (isProject ? ArchiveOutline : FolderOpenOutline) 
+            : FileOutlined,
         }, {}),
         default: () => h('span', {
-          style: {'padding-left': '1px', color: '#333'},
-        }, row.name),
+          style: {
+            'padding-left': '1px', 
+            color: '#333',
+            'font-weight': isProject ? '600' : 'normal'
+          },
+        }, (row.type === 1 && isProject) ? extractProjectName(row.name) : row.name),
       });
     },
   },
@@ -46,13 +57,4 @@ export const columns: BasicColumn<ListData>[] = [
       }, row.updated_at);
     }
   },
-  // {
-  //   title: '大小',
-  //   key: 'size',
-  //   width: 100,
-  //   // auth: ['basic_list'], // 同时根据权限控制是否显示
-  //   // ifShow: (_column) => {
-  //   //   return true; // 根据业务控制是否显示
-  //   // },
-  // }
 ];

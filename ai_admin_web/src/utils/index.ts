@@ -238,3 +238,15 @@ export function lighten(color: string, amount: number) {
 export function isUrl(url: string) {
   return /^(http|https):\/\//g.test(url);
 }
+
+/**
+ * 提取项目名称：仅取最后一级名称并剔除前导编号
+ * 示例："二、财务状况标准/5.财务状况/5-14 资产负债率情况" -> "资产负债率情况"
+ */
+export function extractProjectName(name: string) {
+  if (!name) return '';
+  // 如果包含路径标识符，取最后一部分
+  const lastPart = name.split('/').pop() || name;
+  // 使用正则剔除前导编号（数字、点、横杠及其后的空格）
+  return lastPart.replace(/^[\d.-]+\s*/, '');
+}

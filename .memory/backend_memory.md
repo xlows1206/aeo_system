@@ -43,7 +43,7 @@
 | `id` | `bigint(20) unsigned` | 自增 ID |
 | `user_id` | `bigint(20)` | 提交用户 ID |
 | `master_id` | `bigint(20)` | 所属主账号 ID |
-| `status` | `tinyint(4)` | 0:未审核, 1:不达标, 2:基本达标, 3:达标 |
+| `status` | `tinyint(4)` | **0:审核中, 1:不合格, 3:合格**（已移除"基本达标"状态 2） |
 | `number` | `tinyint(4)` | 审核版本/次数 |
 
 ### 2.3 预审详情表 (`pre_audit_json`)
@@ -65,7 +65,7 @@
 | `check_id` | `bigint(20)` | 关联检测项配置 ID (`folder_check_files.id`) |
 | `folder_name` | `string(255)` | 资料名称 |
 | `is_access` | `tinyint(1)` | 是否通过 (1:通过, 0:不通过) |
-| `failed_str` | `string(255)` | 失败/不通过的具体原因描述 |
+| `failed_str` | `string(255)` | 所有年份的检测结果明细（合格与不合格均记录，逗号分隔）。前端据此渲染年份级别的详情列表。 |
 
 ### 2.5 资料配置表 (`folder_check_files`)
 | 字段名 | 类型 | 含义 |
@@ -94,16 +94,21 @@
 
 ## 4. AI 处理详细逻辑 (AI Processing)
 
-1.  **文件下载与转换**: 
+1.  **文件下载与转换**:
     *   根据 PDF URL 下载文件至 `runtime` 目录。
     *   使用 `Imagick` 以 150 DPI 分辨率将 PDF 分页转换为 PNG 图片。
-2.  **图片托管**: 将 PNG 上传至 OSS，获取临时/公网可见链接。
-3.  **多模态识别**: 
-    *   并发调用 `qwen-vl-max` 接口。
-    *   通过 `CheckHandlerFactory` 获取对应业务的提示词 (Prompt)。
-4.  **业务逻辑执行**: 
-    *   识别结果通过 `Redis` 哈希表暂存，防止重复识别。
-    *   `GetAiResult@handle` 调用相应的 `Handler` 执行数据解析与业务审计。
+2.  **图片识别判断 (`isImage`)**:
+    *   若文件 URL 以 `http` 开头，通过**后缀名**（jpg/png/webp 等）判断是否为图片，直接送入 AI。
+    *   本地文件路径则使用 `file_exists` + `getimagesize` 判断。
+3.  **图片托管**: 将 PNG 上传至 OSS，获取公网可见链接。
+4.  **Redis 缓存 (防重复识别)**:
+    *   Hash Key: `ai_result:{pre_audit_id}_{number}`
+    *   **Field Key: `{check_id}_{file_id}_{page}`**（修复了原来 `{check_id}_{page}` 导致同文件夹多文件 Key 碰撞的 Bug）
+5.  **多模态识别**: 并发调用 `qwen-vl-max`，通过 `CheckHandlerFactory` 获取对应提示词。
+6.  **结果聚合与状态计算**:
+    *   `performAudit()` 负责生成**展示文本**（所有年份均输出）。
+    *   `isAccessible()` 负责**合格判定**，与展示内容完全解耦。
+    *   最终状态：`count($aiResult) > 0 ? 1(不合格) : 3(合格)`，已移除"基本达标"状态。
 
 ---
 
@@ -111,7 +116,7 @@
 
 | 检测项目 | 判断标准 (Business Rules) | 技术实现细节 |
 | :--- | :--- | :--- |
-| **资产负债率情况** | 至少有一年负债率 `liability / liability_equity` <= 95%。 | `FinancialRatioHandler`: 自动处理千分位，执行 `bcdiv` 精确计算。 |
+| **资产负债率情况** | **至少有一年**负债率 `liability / liability_equity` ≤ 95%。 | `FinancialRatioHandler`: 自动处理千分位，`bcdiv` 精确计算。`performAudit` 始终输出**所有年份明细**（含合格项）；`isAccessible` 独立判定：找到任意一年 ≤ 95% 即返回 true。 |
 | **审计报告** | 必须涵盖所有存续年份，且 AI 判定 `result` 为 `true`。 | `AuditReportHandler`: 比对存续年份数组与 AI 返回年份的覆盖率。 |
 | **遵守法律法规** | 必须包含公司所有关键人员的无犯罪证明。 | `LegalComplianceHandler`: 从 `company_info` 提取名单并在结果中执行 `array_diff`。 |
 | **行政被处罚金额** | 累计罚款金额不高于 50,000 元。 | `FineAmountHandler`: 累加匹配公司名称的 `amount` 数值。 |
@@ -137,13 +142,25 @@
 ### 7.1 核心组件
 - **Prompt 存储 (`storage/prompts/`)**: 所有 AI 指令以 `.md` 格式存储，支持 `{check_text}` 等变量动态注入。
 - **检测工厂 (`CheckHandlerFactory`)**: 根据数据库中的 `check_name` 自动分发到对应的 Handler。
-- **业务 Handler (`App\Lib\AI\CheckHandlers`)**:
-    - 统一实现 `CheckHandlerInterface`。
+- **业务 Handler (`App\Lib\AI\CheckHandlers`)**: 统一实现 `CheckHandlerInterface`，包含以下方法：
     - `getPrompt()`: 获取并合成完整提示词。
     - `parseResult()`: 标准化 AI 返回的 JSON，处理数据清洗。
-    - `performAudit()`: 执行纯粹的业务规则算法，返回审计状态。
+    - `performAudit()`: 生成**展示用文本**（合格与不合格年份均输出）。
+    - `isAccessible()`: **合格判定**（与 `performAudit` 显示内容完全解耦）。
 
-### 7.2 优势
+> **Handler 实现约定**：
+> - 若 `performAudit` 遵循 `null = 通过，字符串 = 失败` → 使用 `AbstractHandler` 默认 `isAccessible`，无需额外代码。
+> - 若修改了 `performAudit` 返回约定（如 `FinancialRatioHandler` 始终返回展示内容）→ **必须覆盖** `isAccessible`。
+
+### 7.2 日志接口 (`PreAuditController@log`)
+- **路径**: `GET /api/v1/pre_audit/{id}/log`
+- **新增返回字段** `audit_results`：按检查项聚合的明细数组，结构：
+  ```json
+  [{ "folder_name": "资产负债率", "is_access": 0, "details": ["2020年度: 不合格...", "2021年度: 合格..."] }]
+  ```
+- 前端 `pre_audit/Info.vue` 据此渲染"检查项明细"卡片，同时展示 `合格/不合格` 状态与年份级别结果。
+
+### 7.3 优势
 - **局部更新**: 修改特定检测项逻辑无需改动核心 Job 代码，只需修改对应的 Handler 类或 Markdown 提示词。
 - **易于扩展**: 新增检测项仅需增加一个策略类，主流程逻辑恒定。
 - **可测试性**: 业务规则代码从异步任务流程中抽离，支持单元测试模拟。

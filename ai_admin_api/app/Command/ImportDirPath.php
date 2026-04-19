@@ -2185,7 +2185,7 @@ class ImportDirPath extends HyperfCommand
                 if($k+1 == $len){
                     var_dump($item['检测关键字']);
                     Db::table('folder_check_files')->insert([
-                        'file_name' => $item['文件清单'],
+                        'folder_name' => $item['文件清单'],
                         'folder_id' => $newDir->id,
                         'check_name' => $item['审核项目名称'],
                         'check_type' => $item['检测方式'] == '上传即为通过' ? 2 : 1,

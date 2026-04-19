@@ -1,6 +1,5 @@
 <template>
   <NConfigProvider
-    v-if="!isLock"
     :locale="zhCN"
     :theme="lightTheme"
     :theme-overrides="getThemeOverrides"

@@ -136,7 +136,8 @@ class Finance
         $data = [
             'model' => $model_name,
             'messages' => $messages,
-            'stream' => false
+            'stream' => false,
+            'temperature' => 0.1
         ];
 
         $client = new Client();

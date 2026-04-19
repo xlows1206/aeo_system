@@ -1,37 +1,48 @@
-# 项目目标陈述
-修复 aeo_system 后端 API 错误，并优化前端管理界面功能。
+# 项目进度管理 (project_todo_list.md)
 
-# 关键模块描述
-- **ai_admin_api**: 基于 Hyperf 的后端服务。
-- **ai_admin_web**: 前端管理界面。
+## 项目目标陈述
+解决 AEO 审核系统中“公司设置”保存失败的问题，并确保数据流各环节通畅且逻辑符合业务需求。
 
-# 处理流程描述
-1. 接收前端请求。
-2. 路由分发。
-3. Controller 处理逻辑（涉及数据库查询、缓存等）。
-4. 返回响应。
+## 关键模块描述
+1. **Frontend (View)**: `ai_admin_web/src/views/system/company/index.vue` - 公司信息设置页面。
+2. **Frontend (API)**: 调用接口保存公司信息。
+3. **Database (Table)**: `company_info` 表及相关关联表。
 
-# 任务列表
-- [x] 排查 `/api/v1/index/access_rate` 接口 500 错误
-- [x] 排查 `/api/v1/index/article` 接口 500 错误
-- [x] 排查 `/api/v1/company/types` 接口 500 错误
-- [x] 资料管理页面数据修改与持久化优化 [已完成]
-- [x] 首页 UI 优化：缩小标题字号
-- [x] 梳理文件审核逻辑与 Prompt/API 处理流程 [已完成]
-- [x] 确保所有已知数据流节点通畅
-- [x] 修复 Hyperf `migrate` 命令缺失问题 (确保多环境自动同步) [已完成]
-    - [x] 手动注册迁移命令至 `config/autoload/commands.php`
-    - [x] 手动补全 `migrations` 迁移记录 [Batch 3]
-    - [x] 验证 `php bin/hyperf.php migrate:status` 状态
-- [x] **[架构重构] 检测逻辑与提示词抽象化抽离** [已完成]
-    - [x] 创建 `CheckHandlers` 策略接口与基类
-    - [x] 实现各业务线（财务、审计、法律等）独立 Handler
-    - [x] 建立 `storage/prompts` 外部提示词存储体系
-    - [x] 重构 `GetAiResult` 核心 Job 执行流程
-    - [x] 更新 `.memory/backend_memory.md` 架构文档
-- [x] **[生产修复] 解决同步代码后登录提示网络错误 (502)** [已完成]
-    - [x] 修正 `.env` 容器内通信配置 (DB/Redis/Port)
-    - [x] 对齐 `docker-compose` 与 Nginx 转发端口
-- [x] **[架构优化] 实现多环境配置隔离 (Dev/Prod)** [已完成]
-    - [x] 创建 `.env.development` (Docker) 与 `.env.production` (Baota)
-    - [x] 建立基于文件的环境切换机制 (The Switch)
+## 环境与系统配置修复
+### MCP 配置文件修复
+- **文件**: `mcp_config.json`
+- **问题**: 属性 `$typeName` 不被 MCP 规范允许，导致架构校验失败。
+- **解决状态**: 已修复 (移除所有 `$typeName` 字段)。
+- **日期**: 2026-04-19
+
+## 处理流程描述
+1. 用户在“公司设置”页面填写表单。
+2. 点击“确认”按钮触发 `save` 方法。
+3. 前端发送请求到后端 API。
+4. 后端验证数据并更新数据库。
+5. 后端返回结果给前端，前端提示成功或失败。
+
+## 各环节主任务与子任务
+- [x] **问题排查 (已完成)**
+    - [x] 配置 `apiStoreCompany` 支持 POST 传参
+- [ ] 验证后端 `notSelfTotal` 和 `durationYear` 的接口权限与容错 (进行中)
+- [x] 后端全局异常捕获与日志增强
+- [ ] 再次验证保存流程
+- [x] **修复与验证 (已完成)**
+    - [x] 修复代码中的 Bug (Axios params -> data)。
+    - [x] 验证数据保存是否成功。
+    - [x] 更新 `data_pipeline.md` 记录。
+
+- [x] **基础设施与环境 (已完成)**
+    - [x] 修复 `mcp_config.json` 架构校验错误 (移除 `$typeName`)
+
+## AEO “单项标准 - 六、代理报关业务”集成
+- **目标**: 将 9 项新增代理报关业务标准集成到审核系统。
+- **任务状态**:
+    - [x] 更新 `audit_list_3.csv` 基础数据。
+    - [x] 在 `folders_inserts.sql` 中新增分类及子项文件夹 (ID: 300-309)。
+    - [x] 优化 `sync_audit_csv_final.py` 同步脚本（支持“单项标准”部门映射）。
+    - [x] 执行脚本生成 `sync_final.sql`。
+    - [ ] **问题排查**：修复 `allProjects` 404 错误 (修正 `pan.ts` 中的路由)。
+    - [ ] 将 `sync_final.sql` 部署至数据库并验证界面展示。
+- [x] 修复 AEO 单项标准（二、三、五、八）以及通用标准 7. 进出口记录的乱码重复项，彻底规范并同步数据库树形层级

@@ -146,7 +146,7 @@
     status: [
       { label: '正在审核', value: 0 },
       { label: '不达标', value: 1 },
-      { label: '基本达标', value: 2 },
+      { label: '不合格', value: 1 },
       { label: '达标', value: 3 },
     ],
     search: {

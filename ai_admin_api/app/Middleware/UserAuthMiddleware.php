@@ -27,7 +27,7 @@ class UserAuthMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $request_uri = $request->getServerParams()['request_uri'];
-        if (in_array($request_uri, [])) {
+        if (in_array($request_uri, ["/api/v1/file/projects/all"])) {
             return $handler->handle($request);
         }
 
@@ -62,8 +62,15 @@ class UserAuthMiddleware implements MiddlewareInterface
 
         $user = User::where('id', $userId)->first();
 
+        $parsedBody = $request->getParsedBody();
+        if (is_object($parsedBody)) {
+            $parsedBody = (array) $parsedBody;
+        } elseif (!is_array($parsedBody)) {
+            $parsedBody = [];
+        }
+
         return $handler->handle($request->withParsedBody(
-            array_merge($request->getParsedBody(), ['Auth' => $user])
+            array_merge($parsedBody, ['Auth' => $user])
         ));
     }
 

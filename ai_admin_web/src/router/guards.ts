@@ -66,15 +66,10 @@ export function createRouterGuards(router: Router) {
     routes.forEach((item) => {
       router.addRoute(item as unknown as RouteRecordRaw);
     });
-    //添加404
-    const isErrorPage = router.getRoutes().findIndex((item) => item.name === ErrorPageRoute.name);
-    if (isErrorPage === -1) {
-      router.addRoute(ErrorPageRoute as unknown as RouteRecordRaw);
-    }
 
     const redirectPath = (from.query.redirect || to.path) as string;
     const redirect = decodeURIComponent(redirectPath);
-    const nextData = to.path === redirect ? { ...to, replace: true } : { path: redirect };
+    const nextData = to.path === redirect ? { path: to.path, query: to.query, replace: true } : { path: redirect };
     asyncRouteStore.setDynamicRouteAdded(true);
     next(nextData);
     Loading && Loading.finish();

@@ -17,6 +17,7 @@ use App\Lib\AI\Finance;
 use App\Lib\Log;
 use App\Service\LogService;
 use App\Service\RedisService;
+use App\Service\ArchiveService;
 use Hyperf\AsyncQueue\Job;
 use Hyperf\Context\ApplicationContext;
 use Hyperf\Coroutine\Parallel;
@@ -127,7 +128,7 @@ class GetAiResult extends Job
                         $ai_pre_res[] = [
                             "folder_id" => $file->folder_id,
                             "standard_id" => $file->standard_id,
-                            "folder_name" => $file->file_name,
+                            "folder_name" => $file->folder_name,
                             "check_id" => $file->check_id,
                             "master_id" => $masterId,
                             "is_access" => 1
@@ -152,6 +153,7 @@ class GetAiResult extends Job
                 }
             }
             $resInfo = [];
+            $accessInfo = []; // 独立存放合格判定结果
             $context = [
                 'company_name' => $companyInfo->company_name ?? '',
                 'company_person_names' => $companyPersonName,
@@ -161,34 +163,42 @@ class GetAiResult extends Job
 
             foreach ($res as $check_name => $aggregatedData) {
                 $handler = CheckHandlerFactory::make($check_name);
-                $auditResult = $handler->performAudit($aggregatedData, array_merge($context, ['check_name' => $check_name]));
+                $mergedContext = array_merge($context, ['check_name' => $check_name]);
+                // performAudit 负责"显示内容"，始终存储
+                $auditResult = $handler->performAudit($aggregatedData, $mergedContext);
                 if ($auditResult) {
                     $resInfo[$check_name] = explode('; ', $auditResult);
                 }
+                // isAccessible 负责"是否合格"，与显示内容完全解耦
+                $accessInfo[$check_name] = $handler->isAccessible($aggregatedData, $mergedContext);
             }
 
             $aiResult = [];
             foreach ($all_files as $file) {
-                if (isset($resInfo[$file->check_name]) && count($resInfo[$file->check_name]) > 0) {
+                $displayLines = $resInfo[$file->check_name] ?? [];
+                $passed = $accessInfo[$file->check_name] ?? true;
+
+                if (!$passed) {
                     $ai_pre_res[] = [
                         "folder_id" => $file->folder_id,
                         "standard_id" => $file->standard_id,
-                        "folder_name" => $file->file_name,
+                        "folder_name" => $file->folder_name,
                         "master_id" => $masterId,
                         "check_id" => $file->check_id,
-                        "failed_str" => join(",", $resInfo[$file->check_name]),
+                        "failed_str" => join("; ", $displayLines),
                         "is_access" => 0
                     ];
-                    foreach ($resInfo[$file->check_name] as $fail_err) {
-                        $aiResult[] = $fail_err;
+                    foreach ($displayLines as $line) {
+                        $aiResult[] = $line;
                     }
                 } else {
                     $ai_pre_res[] = [
                         "folder_id" => $file->folder_id,
                         "standard_id" => $file->standard_id,
-                        "folder_name" => $file->file_name,
+                        "folder_name" => $file->folder_name,
                         "master_id" => $masterId,
                         "check_id" => $file->check_id,
+                        "failed_str" => join("; ", $displayLines), // 合格时也保留展示内容
                         "is_access" => 1
                     ];
                 }
@@ -207,16 +217,8 @@ class GetAiResult extends Job
 
             $aiResult = array_unique($aiResult);
 
-            $status = 0;
-            if (count($aiResult) > 1) {
-                $status = 1;
-            }
-            if (count($aiResult) == 1) {
-                $status = 2;
-            }
-            if (count($aiResult) == 0) {
-                $status = 3;
-            }
+            // 只保留合格(3)和不合格(1)两种最终状态
+            $status = count($aiResult) > 0 ? 1 : 3;
 
             Db::table('pre_audit_json')
                 ->where('pre_audit_id', $this->pre_audit_id)
@@ -231,6 +233,37 @@ class GetAiResult extends Job
                 ->update([
                     'status' => $status,
                 ]);
+
+            // === AEO 归档与状态同步逻辑开始 ===
+            $archiveService = ApplicationContext::getContainer()->get(ArchiveService::class);
+            // 统计文件夹维度的结果
+            $folderResults = [];
+            foreach ($ai_pre_res as $item) {
+                $fId = $item['folder_id'];
+                if (!isset($folderResults[$fId])) {
+                    $folderResults[$fId] = ['is_access' => 1, 'file_ids' => []];
+                }
+                if ($item['is_access'] == 0) {
+                    $folderResults[$fId]['is_access'] = 0;
+                }
+            }
+            // 关联文件ID
+            foreach ($all_files_group as $fId => $fGroup) {
+                if (isset($folderResults[$fId])) {
+                    $folderResults[$fId]['file_ids'] = $fGroup->pluck('file_id')->toArray();
+                }
+            }
+            // 执行状态更新与归档/清理
+            foreach ($folderResults as $fId => $res) {
+                if ($res['is_access'] == 1) {
+                    Db::table('folders')->where('id', $fId)->update(['audit_status' => 1]);
+                    $archiveService->archiveProjectFiles((int)$masterId, (int)$fId, $res['file_ids']);
+                } else {
+                    Db::table('folders')->where('id', $fId)->update(['audit_status' => 2]);
+                    $archiveService->purgeProjectArchive((int)$masterId, (int)$fId);
+                }
+            }
+            // === AEO 归档与状态同步逻辑结束 ===
 
         } catch (\Exception $e) {
             $aiResult = ['获取结果失败, 请重新提交资料.'];
@@ -272,7 +305,7 @@ class GetAiResult extends Job
         $inner = new Parallel(5);
         $inner->add(function () use ($file, $aiStr, $finance, $base_url, $model_name, $pages) {
             $prefix = 'ai_result:' . $this->prefixId;
-            $field_prefix = $file->check_id;
+            $field_prefix = $file->check_id . '_' . $file->file_id;
             $fileUrl = $file->url;
             $images = [];
             if (!$this->isImage($fileUrl)) {
@@ -313,6 +346,10 @@ class GetAiResult extends Job
 
     function isImage($filePath)
     {
+        if (str_starts_with($filePath, 'http')) {
+            $extension = strtolower(pathinfo(parse_url($filePath, PHP_URL_PATH), PATHINFO_EXTENSION));
+            return in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']);
+        }
         if (!file_exists($filePath)) return false;
         $info = @getimagesize($filePath);
         return $info !== false;

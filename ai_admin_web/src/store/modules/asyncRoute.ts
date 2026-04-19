@@ -93,8 +93,11 @@ export const useAsyncRouteStore = defineStore({
       const routeFilter = (route) => {
         const { meta } = route;
         const { permissions } = meta || {};
-        if (!permissions || standing === 1) return true;
-        return permissionsList.some((item) => permissions.includes(item.value));
+        if (!permissions || Number(standing) === 1) return true;
+        return permissionsList.some((item) => {
+          const val = typeof item === 'object' ? item.value : item;
+          return permissions.includes(val);
+        });
       };
       const { permissionMode } = useProjectSetting();
       if (unref(permissionMode) === 'BACK') {
