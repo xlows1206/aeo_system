@@ -84,5 +84,4 @@ class FileFolderController extends BaseController
             ],
         ]);
     }
-    }
 }

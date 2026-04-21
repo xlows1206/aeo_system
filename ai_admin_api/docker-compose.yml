@@ -5,8 +5,9 @@ services:
     image: hyperf-skeleton
     build:
       context: .
-#    volumes:
-#      - ./:/opt/www
+    volumes:
+      - ./:/opt/www
+      - /opt/www/vendor
     ports:
       - 9501:9501
     environment:
@@ -28,6 +29,7 @@ services:
       - MYSQL_DATABASE=aeo_ai
     volumes:
       - ./aeo_ai.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./mysql_data:/var/lib/mysql
     networks:
       - hyperf-net
 

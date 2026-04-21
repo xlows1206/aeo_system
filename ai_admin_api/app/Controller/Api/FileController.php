@@ -25,24 +25,32 @@ class FileController extends BaseController
     public function allProjects(RequestInterface $request)
     {
         $standardId = (int)$request->input('standard_id', 0);
+        $ignoreBind = (int)$request->input('ignore_bind', 0);
         $auth = $request->input('Auth');
+        if (!$auth) {
+            return $this->responseService->error('用户信息缺失，请重新登录');
+        }
         $masterId = $auth->master_id;
 
         $query = Db::table('folder_check_files as fcf')
-            ->leftJoin('folders as f', 'f.id', '=', 'fcf.folder_id')
+            ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
             ->leftJoin('folders as p', 'p.id', '=', 'f.parent_id')
+            ->leftJoin('folders as gp', 'gp.id', '=', 'p.parent_id')
             ->where('fcf.standard_id', $standardId);
 
         // 如果是单项标准(ID=6)，根据公司设置的项目进行过滤
-        if ($standardId === 6) {
+        if ($standardId === 6 && !$ignoreBind) {
             $company = Company::where('master_id', $masterId)->first();
             if ($company && !empty($company->bind_projects)) {
                 $bindIds = explode(',', (string)$company->bind_projects);
                 $query->whereIn('fcf.id', $bindIds);
+            } else {
+                // 新要求：如果没设置业务类型，默认不显示，避免全量展示造成混淆
+                $query->whereRaw('1 = 0');
             }
         }
 
-        $projects = $query->select('f.*', 'p.name as parent_name', 'fcf.id as fcf_id')
+        $projects = $query->select('f.*', 'p.name as parent_name', 'gp.name as root_name', 'fcf.id as fcf_id')
             ->get();
 
         $processedFolders = [];
@@ -56,7 +64,8 @@ class FileController extends BaseController
 
             $processedFolders[] = [
                 'id' => 'f' . $f->id,
-                'name' => FolderDisplayName::format($f->name, $f->parent_name),
+                'fcf_id' => (string)$f->fcf_id,
+                'name' => FolderDisplayName::format($f->name, $f->parent_name, $f->root_name),
                 'audit_status' => $status,
                 'parent_id' => 'f' . $f->parent_id,
                 'description' => $f->description ?? '',
@@ -95,6 +104,9 @@ class FileController extends BaseController
     public function index(RequestInterface $request)
     {
         $auth = $request->input('Auth');
+        if (!$auth) {
+            return $this->responseService->error('用户信息缺失，请重新登录');
+        }
         $userId = $auth->id;
         $masterId = $auth->master_id;
 
@@ -102,14 +114,13 @@ class FileController extends BaseController
         $size = $request->input('pageSize', 20);
 
         $folderId = $request->input('folder_id', 0);
-        $folder = Folder::find($folderId);
-
-        $standardId = $request->input('standard_id', 0);
+        $standardId = (int)$request->input('standard_id', 0);
         $checkFolderIds = Db::table('folder_check_files')
             ->pluck('folder_id')
             ->map(fn ($id) => (int)$id)
             ->toArray();
         $checkFolderIdMap = array_flip($checkFolderIds);
+        $folder = Folder::find($folderId);
 
         $paths = [['id' => 0, 'name' => '全部']];
         if ($folder) {
@@ -140,11 +151,43 @@ class FileController extends BaseController
             $paths = array_merge($paths, $ancestorPaths);
         }
 
-        $folders = Db::table('folders')
+        $folderQuery = Db::table('folders')
             ->where('parent_id', $folderId)
             ->where('standard_id', $standardId)
-            ->select('id', 'name', 'parent_id', Db::raw('1 as type'), Db::raw("'' as size"), Db::raw("'' as url"), Db::raw("'' as suffix"), 'updated_at')
-            ->get()
+            ->select('id', 'name', 'parent_id', Db::raw('1 as type'), Db::raw("'' as size"), Db::raw("'' as url"), Db::raw("'' as suffix"), 'updated_at');
+
+        // 单项标准过滤
+        if ((int)$standardId === 6) {
+            $company = Company::where('master_id', $masterId)->first();
+            if ($company && !empty($company->bind_projects)) {
+                $bindIds = explode(',', (string)$company->bind_projects);
+                
+                // 获取所有被绑定的项目的文件夹ID
+                $boundFolderIds = Db::table('folder_check_files')
+                    ->whereIn('id', $bindIds)
+                    ->pluck('folder_id')
+                    ->toArray();
+
+                if (!empty($boundFolderIds)) {
+                    // 获取所有祖先节点
+                    $ancestorFolderIds = Db::table('folder_closure')
+                        ->whereIn('descendant', $boundFolderIds)
+                        ->pluck('ancestor')
+                        ->unique()
+                        ->toArray();
+                    
+                    $folderQuery->whereIn('id', $ancestorFolderIds);
+                } else {
+                    // 如果虽然绑定了但是对应的文件夹没找到，保守起见过滤掉所有
+                    $folderQuery->whereRaw('1 = 0');
+                }
+            } else {
+                // 新要求：未设置业务主体性质时，单项标准路径下不展示任何文件夹
+                $folderQuery->whereRaw('1 = 0');
+            }
+        }
+
+        $folders = $folderQuery->get()
             ->map(function ($item) use ($checkFolderIdMap, $folder) {
                 if (isset($checkFolderIdMap[(int)$item->id])) {
                     $item->name = FolderDisplayName::format($item->name, $folder?->name);
@@ -188,15 +231,18 @@ class FileController extends BaseController
     public function lists(RequestInterface $request)
     {
         $auth = $request->input('Auth');
+        if (!$auth) {
+            return $this->responseService->error('用户信息缺失，请重新登录');
+        }
         $userId = $auth->id;
-        $standardId = $request->input('standard_id', 0);
+        $standardId = (int)$request->input('standard_id', 0);
         $masterId = $auth->master_id;
 
         // 查询所有审核项目文件夹的 ID（以 folder_check_files 为权威来源）
         $query = Db::table('folder_check_files')->where('standard_id', $standardId);
         
         // 如果是单项标准(ID=6)，进行过滤
-        if ($standardId === 6) {
+        if ((int)$standardId === 6) {
             $company = Company::where('master_id', $masterId)->first();
             if ($company && !empty($company->bind_projects)) {
                 $bindIds = explode(',', (string)$company->bind_projects);
@@ -209,10 +255,33 @@ class FileController extends BaseController
             ->toArray();
         $checkFolderIdMap = array_flip($checkFolderIds);
 
-        $folders = Db::table('folders as f')
+        $folderQuery = Db::table('folders as f')
+            ->leftJoin('folders as p', 'p.id', '=', 'f.parent_id')
+            ->leftJoin('folders as gp', 'gp.id', '=', 'p.parent_id')
             ->where('f.standard_id', $standardId)
-            ->select('f.*')
-            ->get();
+            ->select('f.*', 'p.name as p_name', 'gp.name as gp_name');
+
+        // 单项标准树形过滤
+        if ((int)$standardId === 6) {
+            $company = Company::where('master_id', $masterId)->first();
+            if ($company && !empty($company->bind_projects)) {
+                if (!empty($checkFolderIds)) {
+                    $ancestorFolderIds = Db::table('folder_closure')
+                        ->whereIn('descendant', $checkFolderIds)
+                        ->pluck('ancestor')
+                        ->unique()
+                        ->toArray();
+                    $folderQuery->whereIn('f.id', $ancestorFolderIds);
+                } else {
+                    $folderQuery->whereRaw('1 = 0');
+                }
+            } else {
+                // 新要求：左侧树状结构也同步隐藏
+                $folderQuery->whereRaw('1 = 0');
+            }
+        }
+
+        $folders = $folderQuery->get();
 
         $folderNameMap = $folders->pluck('name', 'id')->toArray();
 
@@ -220,7 +289,7 @@ class FileController extends BaseController
             ->map(function ($i) use ($checkFolderIds, $checkFolderIdMap, $folderNameMap) {
                 $name = $i->name;
                 if (isset($checkFolderIdMap[(int)$i->id])) {
-                    $name = FolderDisplayName::format($i->name, $folderNameMap[$i->parent_id] ?? null);
+                    $name = FolderDisplayName::format($i->name, $i->p_name ?? null, $i->gp_name ?? null);
                 }
 
                 return [
@@ -270,6 +339,9 @@ class FileController extends BaseController
     public function standard(RequestInterface $request)
     {
         $auth = $request->input('Auth');
+        if (!$auth) {
+            return $this->responseService->error('用户信息缺失，请重新登录');
+        }
         $standing = $auth->standing;
         $roleId = $auth->role_id;
         $parentId = $auth->parent_id;
@@ -344,7 +416,7 @@ class FileController extends BaseController
 
         $name = $request->input('name');
         $folderId = $request->input('folder_id');
-        $standardId = $request->input('standard_id');
+        $standardId = (int)$request->input('standard_id');
 
         $count = Db::table('files')
             ->where('user_id', $userId)
@@ -437,7 +509,7 @@ class FileController extends BaseController
     {
         $auth = $request->input('Auth');
         $masterId = $auth->master_id;
-        $standardId = $request->input('standard_id', 0);
+        $standardId = (int)$request->input('standard_id', 0);
 
         try {
             $zipPath = $zipService->packagePassedFiles((int)$masterId, (int)$standardId);

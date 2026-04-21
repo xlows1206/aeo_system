@@ -26,10 +26,6 @@ class UserAuthMiddleware implements MiddlewareInterface
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        $request_uri = $request->getServerParams()['request_uri'];
-        if (in_array($request_uri, ["/api/v1/file/projects/all"])) {
-            return $handler->handle($request);
-        }
 
         $authorization = $request->getHeader('authorization')[0] ?? '';
         $tokens = explode('.', $authorization);

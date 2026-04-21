@@ -1,0 +1,25 @@
+# Dependency directories
+node_modules/
+vendor/
+dist/
+dist.zip
+
+# Backup and Business Data (Large size)
+previous_version/
+单项标准/
+*.pdf
+*.docx
+*.zip
+*.tar.gz
+
+# Environment and Logs
+.env
+runtime/
+storage/logs/*.log
+mysql_data/
+
+# IDE and System files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

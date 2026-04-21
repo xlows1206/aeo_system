@@ -54,7 +54,7 @@
                 </template>
                 返回
               </n-button>
-              <h2 class="text-xl font-bold text-gray-800 m-0">
+              <h2 class="text-xl font-bold text-gray-800 m-0 flex-1">
                 {{ params.paths.length > 0 ? params.paths[params.paths.length - 1].name : '' }}
               </h2>
             </div>
@@ -65,8 +65,24 @@
                 ref="uploadRef"
                 v-permission="{ action: ['pan.store'] }"
                 :searchParams="params.searchParams"
+                :disabled="!canUpload.allowed"
+                :tooltip="canUpload.reason"
+                accept=".jpg,.jpeg,.png"
                 @reload="reloadTable"
               ></v-upload>
+
+              <n-button
+                v-if="currentFolder?.example_url"
+                style="border-radius: 5px !important"
+                type="info"
+                ghost
+                @click="openExample"
+              >
+                <template #icon>
+                  <n-icon class="text-lg"><HelpOutline/></n-icon>
+                </template>
+                查看示例
+              </n-button>
 
               <n-button
                 style="border-radius: 5px !important"
@@ -82,7 +98,7 @@
 
             <!-- 项目上传说明文本：当存在描述时显示 -->
             <n-alert
-              v-if="!isAtProjectList && params.paths.length > 0 && params.paths[params.paths.length - 1].description"
+              v-if="!isAtProjectList && params.paths.length > 0"
               type="info"
               class="mt-4"
               :bordered="false"
@@ -91,10 +107,12 @@
               <template #header>
                 <div class="flex items-center gap-2 text-amber-800">
                   <span class="font-bold">文件上传说明</span>
+                  <span v-if="isAiFolder" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded ml-2">⚠️ 仅支持图片格式</span>
                 </div>
               </template>
               <div style="white-space: pre-wrap; color: #92400e; font-size: 14px; line-height: 1.6;">
-                {{ params.paths[params.paths.length - 1].description }}
+                <div v-if="isAiFolder" class="mb-1 font-bold text-red-700">※ 注意：请务必上传清晰的图片（JPG/PNG），暂不支持 PDF。</div>
+                {{ params.paths[params.paths.length - 1].description || '请上传相关审核资料。' }}
               </div>
             </n-alert>
           </div>
@@ -177,8 +195,24 @@
            </div>
 
           <!-- 文件管理表格视图 -->
-          <div v-show="!isAtProjectList" class="p-4 bg-white">
+          <div v-show="!isAtProjectList" class="p-4 bg-white relative">
+            <!-- 信息不全引导卡片 -->
+            <div 
+              v-if="!canUpload.allowed" 
+              class="mb-4 p-6 border-2 border-dashed border-red-200 bg-red-50/50 rounded-xl flex flex-col items-center justify-center text-center"
+            >
+              <TriangleAlert size="48" class="text-red-400 mb-3" />
+              <div class="text-lg font-bold text-red-800 mb-2">基础信息不全，暂时无法上传资料</div>
+              <div class="text-red-600 mb-4 max-w-md">
+                当前项目需要比对[ {{ canUpload.missingLabel }} ]。检测到您尚未在“公司设置”中完善相关项，请先前往填写真实信息。
+              </div>
+              <n-button type="error" @click="toSettingPersonnel">
+                立即前往公司设置
+              </n-button>
+            </div>
+
             <BasicTable
+              v-else
               :columns="columns"
               :request="loadDataTable"
               ref="actionRef"
@@ -202,6 +236,23 @@
     </n-modal>
     
     <v-move ref="moveRef" :projectId="params.currentProjectId" @reload="reloadTable"></v-move>
+
+    <!-- 示例图片查看弹窗 -->
+    <n-modal v-model:show="params.showExample" preset="card" title="文件上传示例" style="width: 80%; max-width: 1000px">
+      <div class="flex flex-col items-center gap-4">
+        <n-alert type="warning" :bordered="false" class="w-full">
+          此图仅为模板参考，上传时请提交您公司的真实材料图片。
+        </n-alert>
+        <div class="border rounded shadow-sm overflow-hidden bg-gray-100 w-full flex justify-center">
+          <img :src="currentFolder?.example_url" style="max-height: 70vh; max-width: 100%; object-fit: contain;" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-center">
+          <n-button type="primary" @click="params.showExample = false">我知道了</n-button>
+        </div>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -280,7 +331,71 @@ const params = reactive({
   isEditingTotal: false,
   checkProjects: [] as Array<{ id: number; name: string; audit_status?: number }>,
   loadingProjects: false,
+  showExample: false,
 });
+
+// 计算属性：当前所在的文件夹信息
+const currentFolder = computed(() => {
+  if (params.paths.length > 0) {
+    return params.paths[params.paths.length - 1];
+  }
+  return null;
+});
+
+// 计算属性：是否为 AI 审核相关的文件夹（根据名称模式识别）
+const isAiFolder = computed(() => {
+  const name = currentFolder.value?.name || '';
+  return name.includes('无犯罪记录') || 
+         name.includes('审计报告') || 
+         name.includes('资产负债') || 
+         name.includes('行政处罚') || 
+         name.includes('被处罚');
+});
+
+// 信息完整度检查逻辑
+const canUpload = computed(() => {
+  const name = currentFolder.value?.name || '';
+  const info = params.companyPersonnelInfo;
+  
+  // 1. 无犯罪记录类：需要负责人及法人姓名
+  if (name.includes('无犯罪记录')) {
+     if (!info.enterprise_person_name || !info.principal_person_name) {
+       return { 
+         allowed: false, 
+         reason: '请先设置法人及主要负责人姓名', 
+         missingLabel: '法人姓名、负责人姓名' 
+       };
+     }
+  }
+  
+  // 2. 行政处罚/比率类：需要报关单总数
+  if (name.includes('行政处罚') || name.includes('被处罚') || name.includes('金额')) {
+     if (!info.not_self_total || Number(info.not_self_total) === 0) {
+       return { 
+         allowed: false, 
+         reason: '请先设置非经自查报关单总数', 
+         missingLabel: '报关单总数' 
+       };
+     }
+  }
+
+  // 3. 审计/资产类：需要年份设置
+  if (name.includes('审计') || name.includes('资产负债')) {
+     if (!info.start_year || !info.end_year) {
+       return { 
+         allowed: false, 
+         reason: '请先设置审计开始/结束年份', 
+         missingLabel: '公司存续年份' 
+       };
+     }
+  }
+
+  return { allowed: true, reason: '', missingLabel: '' };
+});
+
+const openExample = () => {
+  params.showExample = true;
+};
 
 // 加载叶子节点作为审核项目列表
 const loadCheckProjects = async () => {

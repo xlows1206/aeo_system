@@ -14,22 +14,35 @@ class LegalComplianceHandler extends AbstractHandler
     public function performAudit(array $data, array $context): ?string
     {
         $companyPersonNames = $context['company_person_names'] ?? [];
-        if (count($companyPersonNames) < 4) {
-            return "无犯罪记录证明验证失败，公司负责人信息设置不全 (需包含法人、负责人、财务、关务)";
+        if (count($companyPersonNames) < 1) {
+            return "无犯罪记录证明验证失败，公司负责人信息未设置";
         }
 
         $allFoundNames = [];
+        $errors = [];
+
         foreach ($data as $item) {
+            if (isset($item['is_title_correct']) && $item['is_title_correct'] === false) {
+                $errors[] = "文件标题/类型不匹配 (" . ($item['reason'] ?? '请上传无犯罪记录证明') . ")";
+                continue;
+            }
+
+            if (isset($item['has_no_criminal_record']) && $item['has_no_criminal_record'] === false) {
+                $errors[] = "语义核对失败: 资料中未明确表达“无犯罪记录”意图 (" . ($item['reason'] ?? '详见文档内容') . ")";
+                continue;
+            }
+
             if (!empty($item['name'])) {
                 $allFoundNames[] = $item['name'];
             }
         }
 
+        // 身份匹配：提取到的姓名必须是公司设置的负责人之一
         $diffPersons = array_diff($companyPersonNames, $allFoundNames);
         if (count($diffPersons) > 0) {
-            return implode('、', $diffPersons) . ' 未提供无犯罪记录证明, 请检查.';
+            return implode('、', $diffPersons) . ' 未提供合格的无犯罪记录证明 (或姓名匹配失败), 请检查资料。';
         }
 
-        return null;
+        return empty($errors) ? null : implode('; ', $errors);
     }
 }

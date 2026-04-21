@@ -1,6 +1,25 @@
 <template>
   <div class="upload">
-    <n-upload multiple :show-file-list="false" :custom-request="customRequest">
+    <n-tooltip v-if="disabled" placement="top" trigger="hover">
+      <template #trigger>
+        <span style="display: inline-block;">
+          <n-button
+            style="border-radius: 5px !important"
+            type="primary"
+            :disabled="true"
+          >
+            <template #icon>
+              <n-icon>
+                <UploadOutlined/>
+              </n-icon>
+            </template>
+            上传文件
+          </n-button>
+        </span>
+      </template>
+      {{ tooltip }}
+    </n-tooltip>
+    <n-upload v-else multiple :show-file-list="false" :custom-request="customRequest" :accept="accept">
       <n-button
         style="border-radius: 5px !important"
         type="primary">
@@ -31,6 +50,18 @@ const props = defineProps({
     default: () => {
     },
   },
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
+  tooltip: {
+    type: String,
+    default: '',
+  },
+  accept: {
+    type: String,
+    default: '',
+  }
 });
 
 const emits = defineEmits(['reload']);

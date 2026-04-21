@@ -122,7 +122,7 @@ class GetAiResult extends Job
                         $aiStr = $handler->getPrompt(['check_text' => $file->check_text]);
 
                         $parallel->add(function () use ($file, $finance, $base_url, $model_name, $aiStr) {
-                            return $this->extracted($aiStr, $file, $finance, $base_url, $model_name, [1, 2, 3]);
+                            return $this->extracted($aiStr, $file, $finance, $base_url, $model_name, [1, 2]);
                         });
                     } else {
                         $ai_pre_res[] = [

@@ -29,17 +29,11 @@
              <n-select v-model:value="params.data.company_types" multiple :options="params.options" @update:value="handleTypeChange" />
          </n-form-item>
           <n-form-item path="bind_projects" label="绑定检测项目">
-              <div class="flex flex-col gap-4 w-full">
+              <div class="flex flex-col gap-2 w-full">
                   <div v-if="filteredProjectCategories.length === 0" class="text-gray-400 italic">请先选择业务主体性质</div>
-                  <div v-for="category in filteredProjectCategories" :key="category.name" class="p-4 border rounded-md bg-gray-50 mb-2">
-                      <div class="font-bold mb-2 text-primary border-b pb-1" style="color: #18a058; border-bottom: 1px solid #18a05833;">{{ category.name }}</div>
-                      <n-checkbox-group v-model:value="params.data.bind_projects">
-                          <n-space item-style="display: flex;">
-                              <n-checkbox v-for="option in category.options" :key="option.value" :value="option.value" :label="option.label" />
-                          </n-space>
-                      </n-checkbox-group>
+                  <div v-for="category in filteredProjectCategories" :key="category.name" class="p-3 border rounded-md bg-amber-50/20 mb-1">
+                      <div class="font-bold text-primary" style="color: #18a058;">{{ category.name }}</div>
                   </div>
-                  <div v-if="filteredProjectCategories.length > 0" class="text-gray-400 text-xs">根据业务性质自动推荐显示相关大类，可手动勾选调整</div>
               </div>
           </n-form-item>
         <n-form-item label="审计开始年份">
@@ -92,8 +86,8 @@ const params = reactive({
     principal_person_name: '',
     financial_person_name: '',
     customs_person_name: '',
-    company_types: [] as number[],
-    bind_projects: [] as number[],
+    company_types: [] as string[],
+    bind_projects: [] as string[],
     start_year: null,
     end_year: null,
     not_self_total: 0,
@@ -116,17 +110,13 @@ const handleSubmit = (e) => {
   e.preventDefault();
   formRef.value?.validate((errors) => {
     if (!errors) {
-      Promise.all([
-        apiStoreCompany(params.data),
-        apiUpdateCompanyDurationYear({
-          start_year: params.data.start_year,
-          end_year: params.data.end_year,
+      // 整合所有字段通过单一接口保存，彻底解决并发引起的竞态覆盖问题
+      const submitData = {
+          ...params.data,
           duration_year: (params.data.end_year && params.data.start_year) ? (params.data.end_year - params.data.start_year + 1) : null,
-        }),
-        apiSaveCompanyNotSelfTotal({
-          not_self_total: params.data.not_self_total,
-        })
-      ])
+      };
+
+      apiStoreCompany(submitData)
         .then(() => {
           window['$message'].success('操作成功');
           params.loading = false;
@@ -145,50 +135,61 @@ const filteredProjectCategories = computed(() => {
   if (params.data.company_types.length === 0) return [];
   
   // 获取当前选中的所有业务类型推荐的项目 ID 并集
-  const activeProjectIds = new Set<number>();
+  const activeProjectIds = new Set<string>();
   params.data.company_types.forEach(val => {
-    const type = params.options.find(opt => opt.value === val);
+    const type = params.options.find(opt => String(opt.value) === String(val));
     if (type && type.bind_projects) {
-      type.bind_projects.forEach((pId: number) => activeProjectIds.add(pId));
+      type.bind_projects.forEach((pId: string) => activeProjectIds.add(String(pId)));
     }
   });
 
   // 过滤分类：只要该分类下有任何一个项目在 activeProjectIds 中，就显示该大类
   return params.projectCategories.filter(category => {
-      // 提取该分类标识，如 "一"
-      return category.options.some((opt: any) => activeProjectIds.has(opt.value));
+      return category.options.some((opt: any) => activeProjectIds.has(String(opt.value)));
   });
 });
 
-const handleTypeChange = (values: number[]) => {
-  const recommendedProjects = new Set<number>();
+const handleTypeChange = (values: string[]) => {
+  const recommendedProjects = new Set<string>();
   values.forEach(val => {
-    const type = params.options.find(opt => opt.value === val);
+    const type = params.options.find(opt => String(opt.value) === String(val));
     if (type && type.bind_projects) {
-      type.bind_projects.forEach((pId: number) => recommendedProjects.add(pId));
+      type.bind_projects.forEach((pId: string) => recommendedProjects.add(String(pId)));
     }
   });
   // 切换类型时，重新设置绑定的项目为当前选中类型的并集
   params.data.bind_projects = Array.from(recommendedProjects);
 };
 
-onMounted(async () => {
-  // 获取业务类型并包含绑定项目信息
-  const typeRes = await apiGetTypes();
-  params.options = typeRes;
+const generateYearOptions = () => {
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let i = 0; i < 10; i++) {
+        years.push({ label: (currentYear - i).toString(), value: currentYear - i });
+    }
+    params.yearOptions = years;
+};
 
-  // 获取所有可选的检测项目 (standard_id=6)
+onMounted(async () => {
+  // 1. 获取业务类型并包含绑定项目信息 (这些项目 ID 是 fcf_id)
+  const typeRes = await apiGetTypes();
+  params.options = Array.isArray(typeRes) ? typeRes : (typeRes.data || typeRes.list || []);
+
+  // 2. 获取所有可选的检测项目 (standard_id=6)
+  // 新增 ignore_bind=1 参数，确保即便后端已保存了过滤状态，这里也能拿全量数据字典
   const projectRes = await http.request({
-    url: '/v1/file/projects/all?standard_id=6',
+    url: '/v1/file/projects/all?standard_id=6&ignore_bind=1',
     method: 'GET'
   });
+  
+  // 3. 构建 projectOptions，使用 fcf_id 作为 value
   params.projectOptions = projectRes.list.map((item: any) => ({
     label: item.name,
-    value: Number(item.id.toString().replace('f', '')), // 强制转为数字
+    value: String(item.fcf_id), 
     parentName: item.name.split(' ')[0].split('-')[0]
   }));
 
-  // 按父级大类分组
+  // 4. 按父级大类分组
   const categories: Record<string, any[]> = {};
   const parentMap: Record<string, string> = {
       '一': '一、加工贸易以及保税进出口业务',
@@ -202,19 +203,20 @@ onMounted(async () => {
   projectRes.list.forEach((item: any) => {
     let categoryKey = '';
     const name = item.name;
-    if (name.startsWith('一')) categoryKey = '一';
-    else if (name.startsWith('二')) categoryKey = '二';
-    else if (name.startsWith('三')) categoryKey = '三';
-    else if (name.startsWith('五')) categoryKey = '五';
-    else if (name.startsWith('六')) categoryKey = '六';
-    else if (name.startsWith('八')) categoryKey = '八';
+    // 匹配逻辑：
+    // 1. 尝试匹配格式如 "八-20" 开头的名称
+    // 2. 尝试匹配格式如 "八、物流运输业务 - 八-20" 中的 "八-20"
+    const match = name.match(/([一二三四五六七八九十]+)[-、]/);
+    if (match) {
+        categoryKey = match[1];
+    }
     
-    const groupName = parentMap[categoryKey] || '其他业务';
+    const groupName = parentMap[categoryKey] || '单项标准通用项';
     
     if (!categories[groupName]) categories[groupName] = [];
     categories[groupName].push({
         label: item.name,
-        value: Number(item.id.toString().replace('f', ''))
+        value: String(item.fcf_id)
     });
   });
 
@@ -231,14 +233,18 @@ onMounted(async () => {
 
   generateYearOptions();
 
+  // 5. 获取公司已有的信息
   const res = await apiGetCompanyInfo();
   params.data.company_name = res.data.company_name;
   params.data.enterprise_person_name = res.data.enterprise_person_name;
   params.data.principal_person_name = res.data.principal_person_name;
   params.data.financial_person_name = res.data.financial_person_name;
   params.data.customs_person_name = res.data.customs_person_name;
-  params.data.company_types = res.data.company_types || [];
-  params.data.bind_projects = res.data.bind_projects || [];
+  
+  // 显式转换为字符串，确信 ID 类型一致
+  params.data.company_types = (res.data.company_types || []).filter((id:any) => id !== '' && id !== null).map((id: any) => String(id));
+  params.data.bind_projects = (res.data.bind_projects || []).filter((id:any) => id !== '' && id !== null).map((id: any) => String(id));
+  
   params.data.start_year = res.data.start_year;
   params.data.end_year = res.data.end_year;
   params.data.not_self_total = res.data.not_self_total;

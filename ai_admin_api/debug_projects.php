@@ -1,13 +1,33 @@
 <?php
-require 'vendor/autoload.php';
-Hyperf\Di\ClassLoader::init();
-$container = require 'config/container.php';
-$projects = Hyperf\DbConnection\Db::table('folder_check_files as fcf')
-    ->leftJoin('folders as f', 'f.id', '=', 'fcf.folder_id')
+use Hyperf\DbConnection\Db;
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+// Mock DB settings
+$standardId = 6;
+$masterId = 2; // Assuming this is the test user
+
+$query = Db::table('folder_check_files as fcf')
+    ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
     ->leftJoin('folders as p', 'p.id', '=', 'f.parent_id')
-    ->where('fcf.standard_id', 6)
-    ->select('f.*', 'p.name as parent_name')
+    ->leftJoin('folders as gp', 'gp.id', '=', 'p.parent_id')
+    ->where('fcf.standard_id', $standardId);
+
+// Check company binds
+$company = Db::table('company_info')->where('master_id', $masterId)->first();
+if ($company && !empty($company->bind_projects)) {
+    $bindIds = explode(',', (string)$company->bind_projects);
+    echo "Binding IDs: " . implode(',', $bindIds) . "\n";
+    $query->whereIn('fcf.id', $bindIds);
+} else {
+    echo "No bindings found or empty.\n";
+    $query->whereRaw('1 = 0');
+}
+
+$projects = $query->select('f.name as folder_name', 'fcf.id as fcf_id', 'fcf.folder_name as fcf_label')
     ->get();
-foreach ($projects as $f) {
-    echo "ID: f{$f->id}, Name: {$f->name}, ParentName: {$f->parent_name}\n";
+
+echo "Total Projects Found: " . count($projects) . "\n";
+foreach ($projects as $idx => $p) {
+    echo "[$idx] ID: {$p->fcf_id} | Label: {$p->fcf_label} | Folder: {$p->folder_name}\n";
 }

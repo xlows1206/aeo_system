@@ -9,24 +9,34 @@
 ### Antigravity (Antigravity Agent)
 - **职责**：核心逻辑开发、前后端集成、复杂故障排查。
 - **当前重点**：
-    - AEO 单项标准（一～八）全栈集成与数据一致性维护。
-    - 数据库层级结构 (Folders / folder_closure) 与 CSV 审核标准的同步。
-    - 后端接口性能优化与路由冲突解决。
+    - **AEO 镜像层级架构**：自 2026-04-21 起，系统全面升级为“全准则 Universal Sync”模式。`folders_inserts.sql` 必须与 `audit_list_3.csv` 的 `脱敏文件路径` 严格 1:1 对齐。
+    - **V3 符号标准化规范**：
+        - **顶级根目录**：使用 `一、` 或 `六、` 汉字顿号风格。
+        - **子目录与项目**：使用 `16-60-名称` 连字符风格，彻底移除序号与名称间的空格。
+        - **全链路物理同步**：运行 `normalize_disk_folders.py` 对磁盘上的物理目录进行了批量 Bottom-Up 重命名。
+    - **四位一体同步**：确保磁盘、CSV、数据库、SQL 种子四端符号逻辑绝对统一。
 
 ---
 
 ## 2. 核心实现细节
 
-### 2.1 数据同步流 (AEO 标准同步)
-- **工具**：`sync_audit_csv_final.py`
+### 2.1 数据同步流 (全准则通用同步)
+- **工具**：`sync_audit_csv_universal.py`
 - **逻辑**：
-    - 解析 `audit_list_3.csv`，基于"对应部门"进行多维度映射。
-    - 将"单项标准"映射至 standard_id = 6（关务部门）。
-    - 自动生成 `sync_final.sql`，执行 `folders` 表的 `description` 更新
-      及 `folder_check_files` 的关联关系插入。
-- **部门 → standard_id 映射**：
+    - 解析 `audit_list_3.csv` 全量 71 个项目。
+    - 根据 `对应部门` 自动映射 `standard_id` (1:财务, 2:人事, 3:行政, 4:关务, 5:审计, 6:单项标准)。
+    - 自动识别根路径并根据“根目录顿号、子项连字符”规则生成 SQL。
+
+### 1. 结构与符号规范化 (V3 标准 - 2026-04-21)
+- [x] **连字符去空格化**：将所有子级文件夹的 `、` 和 `.` 替换为 `-`，并移除了序号后的空格（如 `16-60-名称`）。
+- [x] **根目录顿号保留**：顶级分类保持 `六、` 这种稳重的汉字顿号风格。
+- [x] **Universal 引擎重构**：打破了只能处理 Standard 6 的限制，现在支持 1-6 全准则载入。
+
+### 2. 核心处理流程
+- [x] 物理磁盘格式化 -> CSV 路径对齐 -> SQL 种子规范化 -> Universal 脚本生成 SQL -> 闭包表重建 -> 账号绑定刷新。
+映射 (以 folders_inserts.sql 为准)**：
     ```
-    { '关务': 6, '人事': 3, '信息': 5, '物流': 4, '单项标准': 6 }
+    { '财务': 1, '人事': 2, '行政': 3, '关务': 4, '审计/审计部': 5, '单项标准': 6 }
     ```
 
 ### 2.2 数据库三表关系（核心架构）
@@ -111,6 +121,26 @@ WHERE fcf.standard_id = 6;
 -- 期望结果：22
 ```
 
+### 🔴 问题：由于 500 报错导致“审计开始年份”为空且页面初始化中断
+
+**发现时间**：2026-04-20
+**现象**：公司设置页面年份下拉框显示“请选择”但点击无任何选项，同时项目列表大类显示正常但子项可能缺失。
+
+**根本原因**：
+1. **API 崩溃**：`/api/v1/file/projects/all` 接口在处理 `folder_check_files` 中的孤儿记录时，将 `null` 传给了 `FolderDisplayName::format`（该函数之前带有严格的 `string` 类型声明），导致 PHP 报出 Fatal Error 并返回 500。
+2. **JS 执行链截断**：前端 `index.vue` 的 `onMounted` 钩子函数中，获取项目列表的请求排在生成年份选项 (`generateYearOptions`) 之前。由于 API 请求抛出异常且未被局部捕捉，导致 `onMounted` 的后续代码（包括生成年份选项和回显已有配置）全部停止运行。
+
+**修复步骤**：
+1. **代码容错**：修改 `FolderDisplayName::format` 和 `normalizeParentName`，允许接收 `null` 参数并返回空字符串。
+2. **查询优化**：在 `FileController` 中将 `leftJoin('folders as f')` 改为 `join('folders as f')`（即 `INNER JOIN`），确保不返回没有对应实际文件夹的无效项目。
+3. **数据补全**：根据备份手动补全了 `folders` 表中缺失的 ID（如 387, 372 等），恢复了 22 个核心审核项目。
+
+### 2.4 公司设置 API 整合 (原子化保存)
+为了彻底解决并发保存导致的竞态冲突（不同请求互相覆盖），系统采用了**单一口径保存**架构：
+- **接口**：`POST /api/v1/company` (对应 `CompanyController@store`)。
+- **改动**：将原本分散在多个接口的 `start_year`, `end_year`, `not_self_total` 等字段收缩到 `store` 方法中。
+- **前端封装**：`index.vue` 在提交前自动计算 `duration_year` 并构造完整的参数对象进行一次性提交。
+
 ---
 
 ## 4. 正确更新审核项目和文件夹的标准流程
@@ -132,23 +162,21 @@ CSV 列格式：`check_name, description, full_path, relative_path, file_count, 
 SELECT id, name, parent_id FROM folders WHERE standard_id=6 ORDER BY id;
 ```
 
-如果需要新增文件夹节点，必须同时：
-1. `INSERT INTO folders (id, name, standard_id, parent_id, ...) VALUES (...)`
-2. 手动重建 `folder_closure`（用上面第 3.1 节的 SQL 模板）
-3. **将 INSERT 语句追加到 `folders_inserts.sql`** 持久化
+> [!IMPORTANT]
+> **重建闭包表 (folder_closure)**：由于我们的 SQL 种子目前不包含闭包数据，每次 `TRUNCATE folders` 后，**必须**手动执行闭包表重建 SQL（插入 distance 0, 1, 2...），否则前端导航路径（Breadcrumb）会因溯源失败而锁死在“全部”。
 
 ### Step 3：运行同步脚本
 
 ```bash
 cd /Users/aaron.w/Desktop/aeo_system
-python3 sync_audit_csv_final.py
-# 生成 sync_final.sql
+python3 sync_audit_csv_universal.py
+# 生成 sync_universal.sql
 ```
 
 ### Step 4：执行生成的 SQL
 
 ```bash
-docker exec -i mysql-aeo mysql --default-character-set=utf8mb4 -u root -proot aeo_ai < sync_final.sql
+docker exec -i mysql-aeo mysql --default-character-set=utf8mb4 -u root -proot aeo_ai < sync_universal.sql
 ```
 
 ### Step 5：验证数据一致性（必做）
@@ -165,15 +193,38 @@ WHERE fcf.standard_id = 6 AND f.id IS NULL;
 SELECT COUNT(*) FROM folder_check_files WHERE standard_id = 6;
 ```
 
-### Step 6：更新文档
+### Step 6：刷新环境与清理缓存 (必做)
 
+> ⚠️ **仅重启后端容器通常不足以使变更立刻生效！**
+
+```bash
+# 1. 重启后端容器使代码变更生效 (若涉及 SCAN_CACHEABLE)
+docker restart hyperf-skeleton
+
+# 2. 强制清理 Redis 缓存 (核心：必须清理才能刷新分类名称和项目列表)
+docker exec -i redis-aeo redis-cli flushall
+
+# 3. 浏览器端处理
+# 按 Ctrl + F5 强制刷新页面，避免 API 响应被浏览器本地缓存。
+```
+
+### Step 7：更新文档
 修改 `data_pipeline.md` 和 `project_todo_list.md`，记录本次变更内容。
 
 ---
 
-## 5. 经验教训（防止再次踩坑）
+- **详情页头部**：进入任何审核项目后，顶部标题必须**仅显示当前文件夹名称**（排除所有父级前缀）。
+- **示例**：路径为 `财务状态 -> 审计报告` 时，标题仅显示 `5-13-审计报告`。
+- **名称来源**：由 `FileController@index` 的 `paths` 数组末项提供，由前端绑定至 `h2` 标签。
+- **视觉要求**：标题使用 `text-xl` 字号，加粗显式，并占据头部操作栏的剩余宽度。
 
-### ⚡ 教训 1：清理数据库前必须保留 fcf 引用关系
+### ⚡ 教训 1：分类名称与项目数据的二元性
+**描述**：左侧菜单显示的“部门分类名称”来源于 `standards` 表，而右侧显示的“审核项目列表”来源于 `folders` 与 `folder_check_files`。
+**对策**：如果需要修改一级分类的文字（如“财务”、“关务”），必须同步 `UPDATE standards SET name = 'xxx' WHERE id = n;`。
+
+### ⚡ 教训 2：Redis 缓存持久性
+**描述**：Hyperf 在数据管理上使用了深度缓存。重启 `hyperf-skeleton` 只会重启 PHP 进程，而 Redis 中的 JSON 缓存块会跨容器重启持续存在。
+**对策**：涉及数据库映射（Mapping）或元数据（Metadata）的修改，必须执行 `redis-cli flushall`。
 
 **踩坑**：为修复乱码和重复数据，对 `folders` 表执行了 `DELETE WHERE id >= 269` 的批量清理，
 但没有检查 `folder_check_files` 中是否还在引用这些 id，导致 fcf 变成孤儿记录，
@@ -220,16 +271,29 @@ WHERE fcf.standard_id = <目标 standard_id> AND f.id IS NULL;
 和 `folders.name` 是独立字段，两者可以不完全一样。
 诊断时以 `fcf.folder_id → folders.id` 的关联是否存在为准，不要被名字是否一致迷惑。
 
----
+### ⚡ 教训 6：后端接口崩溃会导致前端生命周期函数 (Cycle Hooks) 截断
+
+**描述**：在 Vue 的 `onMounted` 或其他 async 函数中，如果前面的 `await` 请求发生了 500 错误且没有被 `try-catch` 包裹，后续的所有初始化逻辑（哪怕完全不依赖这个请求）都会停止执行。
+**对策**：
+- 重要的初始化 logic（如生成本地下拉框选项）应放在 async 请求之前，或者确保请求被 `try-catch` 包裹。
+- 保证每个环境都能稳定生成基础字典数据。
+
+### ⚡ 教训 7：严格类型声明 (Strict Types) 在处理数据库 JOIN 结果时需谨慎
+
+**描述**：PHP 的 `string` 类型声明在接收到 `null` 时会直接导致致命错误。在执行 `LEFT JOIN` 后，右表字段极可能为 `null`。
+**对策**：
+- 在数据展示层（Support / Transformer）的函数参数中，优先使用 `?string` 而非 `string`。
+- 函数内部应显式处理 `null` 情况。
 
 ## 6. 维护规范
 
 ### 标准同步链条
 ```
 修改 audit_list_3.csv
-  → 确认 folders 层级已存在（必要时先建文件夹 + 重建 closure）
-  → python3 sync_audit_csv_final.py（生成 sync_final.sql）
-  → 执行 sync_final.sql
+  → 确认 folders 层级已存在（必要时先建文件夹）
+  → 重建闭包表 (关键：INSERT INTO folder_closure SELECT ... ORDER BY distance)
+  → python3 sync_audit_csv_universal.py（生成 sync_universal.sql）
+  → 执行 sync_universal.sql
   → 运行孤儿诊断 SQL 验证
   → 更新 folders_inserts.sql（追加新增的 folders 行）
   → 更新 data_pipeline.md + project_todo_list.md
@@ -245,23 +309,13 @@ WHERE fcf.standard_id = <目标 standard_id> AND f.id IS NULL;
 | 267 | 五、进出口商品检验业务 | 0 |
 | 268 | 八、物流运输业务 | 0 |
 | 300 | 六、代理报关业务 | 0 |
-| 269 | 一-1 进出口单证复核&保管制度 | 264 |
-| 372 | 二-2 特殊物品单证 | 265 |
-| 373 | 二-3 特殊物品安全管理制度 | 265 |
-| 377 | 三-4 商检制度&台账 | 266 |
-| 276 | 三-4-1 制度 | 377 |
-| 388 | 三-4-2 进境商检查验管理台账 | 377 |
-| 389 | 三-4-3 抽查单证 | 377 |
-| 279 | 三-4-4 熏蒸板记录 | 377 |
-| 378 | 五-9 法检制度 | 267 |
-| 379 | 八-20 运输工具管理制度 | 268 |
-| 380 | 八-21 运输工具行驶轨迹 | 268 |
-| 381 | 八-21-1 制度 | 380 |
-| 382 | 八-21-2 轨迹记录 | 380 |
-| 383 | 八-22 运输工具与驾驶人员匹配制度 | 268 |
-| 384 | 八-22-1 制度 | 383 |
-| 385 | 八-22-2 记录 | 383 |
-| 301-309 | 六-1 至 六-9（代理报关业务子项） | 300 |
+| 500 | 一、内部控制标准 | 0 |
+| 527 | 二、财务状况标准 | 0 |
+| 520 | 三、守法规范标准 | 0 |
+| 531 | 四、贸易安全标准 | 0 |
+| 902 | 1-单证复核及系统逻辑检验 | 300 |
+| 903 | 1-1-进出口单证及复核制度文件 | 902 |
+| 571 | 16-60-货物安全培训 | 568 |
 
 ---
 
@@ -296,4 +350,24 @@ WHERE fcf.standard_id = <目标 standard_id> AND f.id IS NULL;
 
 ---
 
-*Updated by Antigravity - 2026-04-20 (Added Business Nature Filtering)*
+## 8. AI 检测与审计逻辑升级 (2026-04-21)
+
+### 8.1 PDF 提取策略
+- **规则**：针对 `检测方式 = 关键词检测` 的项目，后端 `GetAiResult` Job 会将 PDF 解析范围强制限制在 **前 2 页**。
+- **目的**：提高处理效率，降低 Token 成本，平衡审核关键信息获取效率。
+
+### 8.2 核心关键词规则表 (V3)
+
+| 文件夹/项目名称 | 关键词 (check_text) | 逻辑说明 |
+|---|---|---|
+| 一-1 进出口单证复核&保管制度 | “单证管理”、“复核” | 满足其一即可 |
+| 二-3 特殊物品安全管理制度 | “单证管理”、“复核” | 满足其一即可 |
+| 五、进出口商品检测法检制度 | “商检”、“法检” | 满足其一即可 |
+| 八、物流运输相关制度 | “车辆管理” | 包含该描述 |
+
+### 8.3 物理磁盘变动
+- **Category 五**：新增物理目录 `10-历年法检查验管理台账` 及 `11-历年抽查单证文件` 以支持台账类文件的上传。
+
+---
+
+*Updated by Antigravity - 2026-04-21 (AI Detection Upgrade & PDF 2-Page Limit)*

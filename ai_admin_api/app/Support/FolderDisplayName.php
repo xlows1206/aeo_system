@@ -6,32 +6,24 @@ namespace App\Support;
 
 class FolderDisplayName
 {
-    public static function format(string $name, ?string $parentName): string
+    public static function format(?string $name, ?string $parentName, ?string $rootName = null): string
     {
-        $prefix = self::normalizeParentName($parentName);
-        $name = trim($name);
-
-        if ($name === '' || $prefix === '') {
-            return $name;
+        $parts = [];
+        if ($rootName !== null && trim($rootName) !== '') {
+            $parts[] = trim($rootName);
+        }
+        if ($parentName !== null && trim($parentName) !== '') {
+            $parts[] = trim($parentName);
+        }
+        if ($name !== null && trim($name) !== '') {
+            $parts[] = trim($name);
         }
 
-        $fullPrefix = $prefix . ' - ';
-        if (str_starts_with($name, $fullPrefix)) {
-            return $name;
-        }
-
-        return $fullPrefix . $name;
+        return implode(' - ', $parts);
     }
 
     public static function normalizeParentName(?string $name): string
     {
-        if ($name === null) {
-            return '';
-        }
-
-        $name = trim($name);
-        $name = preg_replace('/^\d+\./u', '', $name) ?? $name;
-
-        return trim($name);
+        return $name !== null ? trim($name) : '';
     }
 }

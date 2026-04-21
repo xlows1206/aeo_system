@@ -33,11 +33,15 @@ class CompanyController extends BaseController
         $user = $request->getParsedBody()['Auth'] ?? $request->input('Auth');
         $company = Company::where('master_id', $user->master_id)->first();
         if ($company) {
-            $company->company_types = $company->types ? explode(',', (string)$company->types) : [];
-            $company->bind_projects = $company->bind_projects ? explode(',', (string)$company->bind_projects) : [];
+            $data = $company->toArray();
+            $data['company_types'] = $company->types ? explode(',', (string)$company->types) : [];
+            $data['bind_projects'] = $company->bind_projects ? explode(',', (string)$company->bind_projects) : [];
+            return $this->responseService->success([
+                'data' => $data
+            ]);
         }
         return $this->responseService->success([
-            'data' => $company
+            'data' => null
         ]);
     }
 
@@ -64,6 +68,13 @@ class CompanyController extends BaseController
             $company->customs_person_name = $request->input('customs_person_name');
             $company->types = $types && is_array($types) ? join(',', $types) : '';
             $company->bind_projects = $bindProjects && is_array($bindProjects) ? join(',', $bindProjects) : '';
+
+            // 整合所有公司配置字段到单一接口，防止并发保存产生的竞态冲突覆盖数据
+            if ($request->has('start_year')) $company->start_year = $request->input('start_year');
+            if ($request->has('end_year')) $company->end_year = $request->input('end_year');
+            if ($request->has('duration_year')) $company->duration_year = $request->input('duration_year');
+            if ($request->has('not_self_total')) $company->not_self_total = $request->input('not_self_total');
+
             $company->save();
             return $this->responseService->success();
         } catch (\Throwable $e) {
@@ -115,11 +126,11 @@ class CompanyController extends BaseController
     {
         $types = Db::table('company_types')->get()->map(function ($item){
             return [
-                'value' => (int) $item->id, 
+                'value' => (string) $item->id, 
                 'label' => $item->name,
-                'bind_projects' => $item->note ? array_map('intval', explode(',', $item->note)) : []
+                'bind_projects' => $item->note ? array_map('strval', explode(',', $item->note)) : []
             ];
-        });
+        })->values()->toArray();
         return $this->responseService->success($types);
     }
 }
