@@ -4,13 +4,11 @@ import os
 
 # 1. 配置
 CSV_PATH = '/Users/aaron.w/Desktop/aeo_system/audit_list_3.csv'
-SQL_INSERTS_PATH = '/Users/aaron.w/Desktop/aeo_system/ai_admin_api/folders_inserts.sql'
 OUTPUT_SQL = '/Users/aaron.w/Desktop/aeo_system/sync_universal.sql'
 
-print("Initializing Universal Enhanced Sync (Standard 1-6)...")
+print("Initializing Universal Authoritative Sync (Standard 1-6)...")
 
-# 2. 核心映射表 (顶级文件夹名称 + 对应部门 -> 根节点 ID 和 标准 ID)
-# 数据来源：folders_inserts.sql
+# 2. 核心映射表 (以 CSV 中的顿号标点为准)
 ROOT_CONFIG = {
     # 单项标准 (Standard 6)
     ('一、加工贸易以及保税进出口业务', '单项标准'): {'id': 264, 'std_id': 6},
@@ -42,14 +40,25 @@ ROOT_CONFIG = {
 
 # 加载 CSV
 df = pd.read_csv(CSV_PATH)
+# 预处理：过滤掉空路径
+df = df.dropna(subset=['脱敏文件路径'])
 unique_paths_with_depts = df[['脱敏文件路径', '对应部门']].drop_duplicates().values.tolist()
 
 full_sql = ["""
 SET FOREIGN_KEY_CHECKS = 0;
-TRUNCATE TABLE `folder_check_files`;
 
--- 注意：不清理 folders, 因为 folders_inserts.sql 会重置它。
--- 我们仅在这里动态创建那些在 inserts 中没覆盖到的层级。
+-- 1. 修正后端数据库根节点标点符号 (从 - 改为 、)
+UPDATE `folders` SET `name` = '一、加工贸易以及保税进出口业务' WHERE `id` = 264;
+UPDATE `folders` SET `name` = '二、卫生检疫业务' WHERE `id` = 265;
+UPDATE `folders` SET `name` = '三、动植物检疫业务' WHERE `id` = 266;
+UPDATE `folders` SET `name` = '五、进出口商品检验业务' WHERE `id` = 267;
+UPDATE `folders` SET `name` = '八、物流运输业务' WHERE `id` = 268;
+UPDATE `folders` SET `name` = '六、代理报关业务' WHERE `id` = 300;
+
+-- 2. 清理旧的绑定关系和单项标准的子项 (防止编号重复)
+TRUNCATE TABLE `folder_check_files`;
+DELETE FROM `folders` WHERE `standard_id` = 6 AND `id` > 500;
+DELETE FROM `folder_closure` WHERE descendant NOT IN (SELECT id FROM folders);
 
 DROP PROCEDURE IF EXISTS SyncUniversal;
 DELIMITER //
@@ -58,15 +67,13 @@ BEGIN
 """]
 
 def generate_path_sql(path_str, dept_name):
-    parts = path_str.split('/')
+    parts = [p.strip() for p in path_str.split('/')]
     if len(parts) < 2:
         return "", None, None
     
-    # root_prefix = parts[0] # 单项标准 或 通用标准
     root_category_name = parts[1]
     hierarchy = parts[2:]
     
-    # 查找配置
     config = ROOT_CONFIG.get((root_category_name, dept_name))
     if not config:
         # 降级尝试：如果部门带'部'字
@@ -76,7 +83,7 @@ def generate_path_sql(path_str, dept_name):
             config = ROOT_CONFIG.get((root_category_name, dept_name + '部'))
             
     if not config:
-        return f"-- [WARNING] No root mapped for {root_category_name} + {dept_name}", None, None
+        return f"    -- [WARNING] No root mapped for {root_category_name} + {dept_name}", None, None
 
     std_id = config['std_id']
     root_id = config['id']
@@ -87,7 +94,9 @@ def generate_path_sql(path_str, dept_name):
     
     for name in hierarchy:
         current_full_path += "/" + name
-        var_name = "@f_" + re.sub(r'[^a-zA-Z0-9]', '_', current_full_path)
+        import hashlib
+        path_hash = hashlib.md5(current_full_path.encode('utf-8')).hexdigest()
+        var_name = "@f_" + path_hash
         
         # SQL logic to find or create
         local_sql.append(f"""
@@ -112,7 +121,7 @@ for path, dept in unique_paths_with_depts:
         full_sql.append(sql_block)
         path_mapping[(path, dept)] = (final_var, std_id)
 
-full_sql.append("\n    -- Start Inserting Audit Items")
+full_sql.append("\n    -- 3. 开始同步审核项目 (以 CSV 为准)")
 for _, row in df.iterrows():
     raw_name = str(row['审核项目名称']).strip().replace("'", "\\'")
     instruction = str(row['需要上传文件说明']).strip().replace("'", "\\'")
@@ -148,4 +157,4 @@ SET FOREIGN_KEY_CHECKS = 1;
 with open(OUTPUT_SQL, 'w', encoding='utf-8') as f:
     f.write("\n".join(full_sql))
 
-print(f"Universal Sync SQL generated at {OUTPUT_SQL} with {len(path_mapping)} paths mapped.")
+print(f"Authoritative Sync SQL generated at {OUTPUT_SQL} with {len(path_mapping)} paths mapped.")
