@@ -122,13 +122,46 @@ class CompanyController extends BaseController
         }
     }
     #[RequestMapping(path: "types", methods: "get")]
-    public function types()
+    public function types(RequestInterface $request)
     {
-        $types = Db::table('company_types')->get()->map(function ($item){
+        $user = $request->getParsedBody()['Auth'] ?? $request->input('Auth');
+        $masterId = (int)($user->master_id ?? 0);
+
+        $types = Db::table('company_types')->get()->map(function ($item) use ($masterId) {
+            $note = (string)$item->note;
+            $templateIds = $note ? array_map('trim', explode(',', $note)) : [];
+            $mappedIds = [];
+
+            if (!empty($templateIds)) {
+                if ($masterId === 0) {
+                    $mappedIds = array_map('strval', $templateIds);
+                } else {
+                    $templateProjects = Db::table('folder_check_files as fcf')
+                        ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
+                        ->whereIn('fcf.id', $templateIds)
+                        ->select('f.name as folder_name', 'fcf.check_name')
+                        ->get();
+
+                    foreach ($templateProjects as $tpl) {
+                        $userProject = Db::table('folder_check_files as fcf')
+                            ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
+                            ->where('f.master_id', $masterId)
+                            ->where('f.name', trim($tpl->folder_name))
+                            ->where('fcf.check_name', trim($tpl->check_name))
+                            ->select('fcf.id')
+                            ->first();
+                        
+                        if ($userProject) {
+                            $mappedIds[] = (string)$userProject->id;
+                        }
+                    }
+                }
+            }
+
             return [
                 'value' => (string) $item->id, 
                 'label' => $item->name,
-                'bind_projects' => $item->note ? array_map('strval', explode(',', $item->note)) : []
+                'bind_projects' => $mappedIds
             ];
         })->values()->toArray();
         return $this->responseService->success($types);

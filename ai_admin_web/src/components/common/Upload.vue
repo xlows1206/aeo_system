@@ -98,12 +98,13 @@ const customRequest = async ({
     let postName = file.name;
     let fileSize = file.size;
     let fileName = makeRandomName(file.name, res.random);
-    params.upload.url = res.config.host + '?' + res.random;
-    params.upload.name = res.config.host + res.name;
+    let host = res.config.host.replace('http://', 'https://');
+    params.upload.url = host + '?' + res.random;
+    params.upload.name = host + res.name;
     params.upload.data.policy = res.config.policy;
     params.upload.data.OSSAccessKeyId = res.config.accessid;
     params.upload.data.signature = res.config.signature;
-    params.upload.data.host = res.config.host;
+    params.upload.data.host = host;
     params.upload.data.callback = res.config.callback;
     params.upload.data.key = res.config.dir + fileName;
     const formData = new FormData();
@@ -111,7 +112,7 @@ const customRequest = async ({
       formData.append(key, params.upload.data[key as keyof UploadCustomRequestOptions['data']]);
     });
     formData.append('file', file.file as File);
-    let fileUrl = res.config.host + res.prefix + fileName
+    let fileUrl = host + res.prefix + fileName
     await lyla
       .post(params.upload.url, {
         withCredentials,

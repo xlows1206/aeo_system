@@ -1,18 +1,23 @@
 <template>
   <div class="main">
-    <v-tree
-      :createType="props.createType"
-      @getData="updateCheckedKeys"
-      :defaultCheckedKeys="params.currentData"
-      :standard_id="props.currentPre.id"
-    ></v-tree>
-    <n-button
-      :type="maxPre === props.currentPreIndex ? 'primary' : 'primary'"
-      style="float: right"
-      @click="onSubmit"
-    >提交
-    </n-button
-    >
+    <div class="content-area">
+      <v-tree
+        ref="treeRef"
+        :createType="props.createType"
+        @getData="updateCheckedKeys"
+        :defaultCheckedKeys="params.currentData"
+        :standard_id="props.currentPre.id"
+      ></v-tree>
+    </div>
+    <div class="submit-footer mt-4 flex justify-end">
+      <n-button
+        :type="maxPre === props.currentPreIndex ? 'primary' : 'primary'"
+        size="large"
+        @click="onSubmit"
+      >
+        确认并提交
+      </n-button>
+    </div>
   </div>
 </template>
 
@@ -69,4 +74,22 @@ const onSubmit = () => {
 };
 </script>
 
-<style scoped lang="less"></style>
+<style scoped lang="less">
+.main {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 180px); /* 减去 Tab 和抽屉头部高度 */
+}
+
+.content-area {
+  flex: 1;
+  overflow: hidden; /* 由内部 scrollbar 处理滚动 */
+}
+
+.submit-footer {
+  padding: 16px 0;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+  flex-shrink: 0;
+}
+</style>

@@ -71,18 +71,6 @@
                 @reload="reloadTable"
               ></v-upload>
 
-              <n-button
-                v-if="currentFolder?.example_url"
-                style="border-radius: 5px !important"
-                type="info"
-                ghost
-                @click="openExample"
-              >
-                <template #icon>
-                  <n-icon class="text-lg"><HelpOutline/></n-icon>
-                </template>
-                查看示例
-              </n-button>
 
               <n-button
                 style="border-radius: 5px !important"
@@ -108,7 +96,17 @@
                 <div class="flex items-center gap-2 text-amber-800">
                   <span class="font-bold">文件上传说明</span>
                   <span v-if="isAiFolder" class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded ml-2">⚠️ 仅支持图片格式</span>
-                </div>
+                  <n-button
+                    v-if="exampleUrl"
+                    size="tiny"
+                    style="border-radius: 5px !important"
+                    @click="openExample"
+                  >
+                    <template #icon>
+                      <n-icon><HelpOutline /></n-icon>
+                    </template>
+                    点此查看参考示例
+                  </n-button>                </div>
               </template>
               <div style="white-space: pre-wrap; color: #92400e; font-size: 14px; line-height: 1.6;">
                 <div v-if="isAiFolder" class="mb-1 font-bold text-red-700">※ 注意：请务必上传清晰的图片（JPG/PNG），暂不支持 PDF。</div>
@@ -188,6 +186,7 @@
                       :bordered="false" 
                       round
                     >待审核</n-tag>
+
                   </div>
                  <n-icon size="16" color="#ccc"><ChevronForward /></n-icon>
                </div>
@@ -235,7 +234,14 @@
        </template>
     </n-modal>
     
-    <v-move ref="moveRef" :projectId="params.currentProjectId" @reload="reloadTable"></v-move>
+    <v-move 
+      ref="moveRef" 
+      :id="params.currentFileId" 
+      :fileType="params.currentFileType" 
+      :projectId="params.currentProjectId" 
+      :standardId="params.searchParams.standard_id"
+      @reload="reloadTable"
+    ></v-move>
 
     <!-- 示例图片查看弹窗 -->
     <n-modal v-model:show="params.showExample" preset="card" title="文件上传示例" style="width: 80%; max-width: 1000px">
@@ -244,7 +250,7 @@
           此图仅为模板参考，上传时请提交您公司的真实材料图片。
         </n-alert>
         <div class="border rounded shadow-sm overflow-hidden bg-gray-100 w-full flex justify-center">
-          <img :src="currentFolder?.example_url" style="max-height: 70vh; max-width: 100%; object-fit: contain;" />
+          <img :src="params.tempExampleUrl || exampleUrl" style="max-height: 70vh; max-width: 100%; object-fit: contain;" />
         </div>
       </div>
       <template #footer>
@@ -332,6 +338,7 @@ const params = reactive({
   checkProjects: [] as Array<{ id: number; name: string; audit_status?: number }>,
   loadingProjects: false,
   showExample: false,
+  tempExampleUrl: '',
 });
 
 // 计算属性：当前所在的文件夹信息
@@ -342,6 +349,15 @@ const currentFolder = computed(() => {
   return null;
 });
 
+// 动态匹配示例图片路径
+const exampleUrl = computed(() => {
+    const name = currentFolder.value?.name || '';
+    if (name.includes('审计报告')) return '/examples/sample_audit_report.png';
+    if (name.includes('合规') || name.includes('守法') || name.includes('惩戒')) return '/examples/sample_compliance.png';
+    if (name.includes('资产负债') || name.includes('财务') || name.includes('报告')) return '/examples/sample_balance_sheet.png';
+    return '';
+});
+
 // 计算属性：是否为 AI 审核相关的文件夹（根据名称模式识别）
 const isAiFolder = computed(() => {
   const name = currentFolder.value?.name || '';
@@ -349,7 +365,8 @@ const isAiFolder = computed(() => {
          name.includes('审计报告') || 
          name.includes('资产负债') || 
          name.includes('行政处罚') || 
-         name.includes('被处罚');
+         name.includes('被处罚') ||
+         exampleUrl.value !== '';
 });
 
 // 信息完整度检查逻辑
@@ -394,7 +411,31 @@ const canUpload = computed(() => {
 });
 
 const openExample = () => {
+  params.tempExampleUrl = '';
   params.showExample = true;
+};
+
+const handleViewExampleFromCard = (e: MouseEvent, project: any) => {
+    e.stopPropagation();
+    const url = getExampleImage(project.name);
+    if (url) {
+        params.showExample = true;
+        // 注意：我们需要确保 currentFolder 被临时模拟或弹窗直接引用 url
+        // 这里为了简单，我们直接复用 params.showExample 和修改 currentFolder 逻辑
+        // 或者直接传给弹窗。
+        // 由于弹窗用的是 currentFolder?.example_url (旧逻辑) 或 exampleUrl (新逻辑)
+        // 我将修改弹窗逻辑，使其支持直接传入 url
+        params.tempExampleUrl = url;
+    }
+};
+
+const getExampleImage = (name: string) => {
+    if (name.includes('审计报告')) return '/examples/sample_audit_report.png';
+    if (name.includes('合规') || name.includes('守法') || name.includes('惩戒')) return '/examples/sample_compliance.png';
+    if (name.includes('资产负债') || name.includes('财务') || name.includes('报告')) return '/examples/sample_balance_sheet.png';
+    if (name.includes('无犯罪')) return '/examples/sample_no_criminal.png';
+    if (name.includes('货物安全')) return '/examples/sample_cargo_security.png';
+    return '';
 };
 
 // 加载叶子节点作为审核项目列表
@@ -601,11 +642,31 @@ const handleEdit = (record: any, type: string) => {
       params.currentFileType = record.type === 1 ? 'folder' : 'file';
       params.currentFileId = record.id;
       
-      // 提取当前所属的项目 ID (paths 的第二项通常是顶级项目)
-      if (params.paths.length >= 2) {
-         params.currentProjectId = params.paths[1].id;
+      // 提取当前所属的 AEO 审核项目 ID
+      // 遍历面包屑路径，寻找第一个在项目列表中的文件夹作为“项目根目录”
+      let projectId = 0;
+      // 从右往左找，第一个匹配项目的即为当前所属项目
+      for (let i = params.paths.length - 1; i >= 0; i--) {
+        const pathId = params.paths[i].id;
+        // 注意：checkProjects 中的 ID 可能是数字，也可能是带 f 的字符串
+        const isMatch = params.checkProjects.some(p => {
+           const pid = String(p.id).replace('f', '');
+           return String(pid) === String(pathId);
+        });
+        
+        if (isMatch) {
+          projectId = pathId;
+          break;
+        }
       }
       
+      // 如果没找到（可能在顶层），则使用最后一个路径 ID 作为保底
+      if (!projectId && params.paths.length > 1) {
+        // 索引 1 通常是类别或项目
+        projectId = params.paths[1].id;
+      }
+
+      params.currentProjectId = projectId;
       moveRef.value.openModal();
       break;
     case 'download':

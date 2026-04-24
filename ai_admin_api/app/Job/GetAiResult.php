@@ -108,31 +108,38 @@ class GetAiResult extends Job
                 $intData = array_merge($intData, $infoIntData);
             }
             $all_files = Db::table('files as f')
-                ->leftJoin('folders as fo', 'f.folder_id', '=', 'fo.id')
-                ->leftJoin('folder_check_files as fcf', 'fcf.folder_id', '=', 'fo.id')
+                ->join('folders as fo', 'f.folder_id', '=', 'fo.id')
+                ->join('folder_closure as fc', 'fo.id', '=', 'fc.descendant')
+                ->join('folder_check_files as fcf', 'fc.ancestor', '=', 'fcf.folder_id')
                 ->whereIn('f.id', $intData)
-                ->select(['*', 'f.id as file_id', 'fo.name as folder_name', 'fcf.id as check_id'])
+                ->select([
+                    'f.*',
+                    'f.id as file_id',
+                    'fo.name as folder_name',
+                    'fcf.id as check_id',
+                    'fcf.check_name',
+                    'fcf.check_type',
+                    'fcf.check_text',
+                    'fcf.standard_id'
+                ])
+                ->orderBy('fc.distance', 'asc')
                 ->get();
+
+            // 按 file_id 去重，确保每个文件只对应其最近的审计项祖先
+            $all_files = $all_files->unique('file_id');
             $all_files_group = $all_files->groupBy('f.folder_id');
 
+            // 预处理：只对需要 AI 参与的项目加入并行队列
             foreach ($all_files_group as $files) {
                 foreach ($files as $file) {
-                    if ($file->check_type == 1) {
+                    // check_type: 1-AI内容理解, 2-关键词检测 都走 AI 流程
+                    if (in_array($file->check_type, [1, 2])) {
                         $handler = CheckHandlerFactory::make($file->check_name);
                         $aiStr = $handler->getPrompt(['check_text' => $file->check_text]);
 
                         $parallel->add(function () use ($file, $finance, $base_url, $model_name, $aiStr) {
                             return $this->extracted($aiStr, $file, $finance, $base_url, $model_name, [1, 2]);
                         });
-                    } else {
-                        $ai_pre_res[] = [
-                            "folder_id" => $file->folder_id,
-                            "standard_id" => $file->standard_id,
-                            "folder_name" => $file->folder_name,
-                            "check_id" => $file->check_id,
-                            "master_id" => $masterId,
-                            "is_access" => 1
-                        ];
                     }
                 }
             }
@@ -142,9 +149,12 @@ class GetAiResult extends Job
             $results = $this->redisService->make()->hGetAll('ai_result:' . $this->prefixId);
             $res = [];
             foreach ($results as $key => $result) {
-                Log::get()->info($result);
                 $key_arr = explode('_', $key);
                 $result = json_decode($result, true);
+                if (! is_array($result)) {
+                    Log::get()->warning("GetAiResult: invalid json for check_id {$key}", ['raw' => $result]);
+                    continue;
+                }
                 $check_id = $key_arr[0];
                 $file = $all_files->where('check_id', $check_id)->first();
                 if ($file) {
@@ -174,35 +184,69 @@ class GetAiResult extends Job
             }
 
             $aiResult = [];
-            foreach ($all_files as $file) {
-                $displayLines = $resInfo[$file->check_name] ?? [];
-                $passed = $accessInfo[$file->check_name] ?? true;
+            // 按照审核项目 (Check ID) 进行聚合保存，避免重复记录
+            $checkGroups = $all_files->groupBy('check_id');
 
+            foreach ($checkGroups as $cId => $filesInCheck) {
+                $firstFile = $filesInCheck->first();
+                $checkName = $firstFile->check_name;
+                $displayLines = $resInfo[$checkName] ?? [];
+                $passed = $accessInfo[$checkName] ?? true;
+
+                // 如果是 AI 类型但通过了，且没有错误信息，尝试获取成功的具体结论
+                if (in_array($firstFile->check_type, [1, 2]) && $passed && empty($displayLines)) {
+                    $handler = CheckHandlerFactory::make($checkName);
+                    $displayLines = $handler->getSuccessMessages($res[$checkName] ?? [], $context);
+                }
+
+                // 构造入库数据
+                $result_str = "";
                 if (!$passed) {
-                    $ai_pre_res[] = [
-                        "folder_id" => $file->folder_id,
-                        "standard_id" => $file->standard_id,
-                        "folder_name" => $file->folder_name,
-                        "master_id" => $masterId,
-                        "check_id" => $file->check_id,
-                        "failed_str" => join("; ", $displayLines),
-                        "is_access" => 0
-                    ];
+                    $result_str = (string)join("; ", $displayLines);
+                } else {
+                    if (in_array($firstFile->check_type, [1, 2])) {
+                        $result_str = empty($displayLines) ? "未能从文档中提取到有效的审核结论，请检查文件内容。" : (string)join("; ", $displayLines);
+                    } else {
+                        $result_str = "上传的文档文件符合审核项目标准。";
+                    }
+                }
+
+                $ai_pre_res[] = [
+                    "folder_id" => (int)$firstFile->folder_id,
+                    "standard_id" => (int)$firstFile->standard_id,
+                    "folder_name" => (string)$firstFile->folder_name,
+                    "master_id" => (int)$masterId,
+                    "check_id" => (int)$cId,
+                    "result_str" => $result_str,
+                    "is_access" => $passed ? 1 : 0
+                ];
+
+                // 统一将所有审核结论（通过或失败）存入最终 JSON 用于提交历史展示
+                // 使用 check_name 作为项目展示名，确保即便在子文件夹下也能正确归类
+                $projectName = $this->extractProjectName($checkName);
+                if (!empty($displayLines)) {
                     foreach ($displayLines as $line) {
-                        $aiResult[] = $line;
+                        $uniqueKey = $projectName . '_' . $line;
+                        $aiResult[$uniqueKey] = [
+                            'project' => $projectName,
+                            'status' => $passed ? 1 : 0,
+                            'text' => $line
+                        ];
                     }
                 } else {
-                    $ai_pre_res[] = [
-                        "folder_id" => $file->folder_id,
-                        "standard_id" => $file->standard_id,
-                        "folder_name" => $file->folder_name,
-                        "master_id" => $masterId,
-                        "check_id" => $file->check_id,
-                        "failed_str" => join("; ", $displayLines), // 合格时也保留展示内容
-                        "is_access" => 1
-                    ];
+                    $uniqueKey = $projectName . ($passed ? '_SUCCESS' : '_FAILED');
+                    if (!isset($aiResult[$uniqueKey])) {
+                        $aiResult[$uniqueKey] = [
+                            'project' => $projectName,
+                            'status' => $passed ? 1 : 0,
+                            'text' => in_array($firstFile->check_type, [1, 2]) ? $result_str : '上传的文档文件符合审核项目标准。'
+                        ];
+                    }
                 }
             }
+            
+            // 将去重后的结果转回索引数组
+            $aiResult = array_values($aiResult);
 
             $del_ids = [];
             foreach ($ai_pre_res as $ai_pre_re) {
@@ -215,10 +259,15 @@ class GetAiResult extends Job
             // 保存预审结果至数据库
             Db::table('pre_audit_results')->insert($ai_pre_res);
 
-            $aiResult = array_unique($aiResult);
-
-            // 只保留合格(3)和不合格(1)两种最终状态
-            $status = count($aiResult) > 0 ? 1 : 3;
+            // 判定最终状态：只有当所有项都通过(is_access=1)时，整体才为通过(3)
+            $allPassed = true;
+            foreach ($ai_pre_res as $item) {
+                if ($item['is_access'] == 0) {
+                    $allPassed = false;
+                    break;
+                }
+            }
+            $status = $allPassed ? 3 : 1;
 
             Db::table('pre_audit_json')
                 ->where('pre_audit_id', $this->pre_audit_id)
@@ -265,8 +314,8 @@ class GetAiResult extends Job
             }
             // === AEO 归档与状态同步逻辑结束 ===
 
-        } catch (\Exception $e) {
-            $aiResult = ['获取结果失败, 请重新提交资料.'];
+        } catch (\Throwable $e) {
+            $aiResult = [['project' => '系统错误', 'status' => 0, 'text' => 'AI 解析过程发生异常, 请稍后重试或联系管理员.']];
             Db::table('pre_audit_json')
                 ->where('pre_audit_id', $this->pre_audit_id)
                 ->where('number', $this->number)
@@ -283,9 +332,11 @@ class GetAiResult extends Job
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
 
-            var_dump($e);
-            Log::get()->error('GetAiResult Error: ', [
-                'message' => $e,
+            Log::get()->error('GetAiResult Fatal Error: ', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
@@ -432,10 +483,15 @@ class GetAiResult extends Job
         // oss 上传图片
         try {
             $prefix = date('Ymd') . '/images/';
-            $accessKeyId = getenv('OSS_ACCESS_KEY');
-            $accessKeySecret = getenv('OSS_SECRET_KEY');
-            $endpoint = getenv('OSS_ENDPOINT');
-            $bucket = getenv('OSS_BUCKET');
+            $accessKeyId = (string)env('OSS_ACCESS_KEY');
+            $accessKeySecret = (string)env('OSS_SECRET_KEY');
+            $endpoint = (string)env('OSS_ENDPOINT');
+            $bucket = (string)env('OSS_BUCKET');
+
+            if (empty($accessKeyId) || str_contains($accessKeyId, 'REPLACE')) {
+                Log::get()->error('OSS Configuration Missing or Invalid', ['key' => $accessKeyId]);
+                return '';
+            }
             $adapter = new OssAdapter($accessKeyId, $accessKeySecret, $endpoint, $bucket, false, $prefix);
             $flysystem = new Filesystem($adapter);
 
@@ -449,5 +505,18 @@ class GetAiResult extends Job
             ]);
             return '';
         }
+    }
+
+    /**
+     * 提取项目名称：仅取最后一级名称并剔除前导编号
+     * 对应前端 extractProjectName 逻辑
+     */
+    private function extractProjectName(string $name): string
+    {
+        if (empty($name)) return '';
+        $parts = explode('/', $name);
+        $lastPart = end($parts);
+        // 剔除前导编号 (例如 "5-14-资产负债率情况" -> "资产负债率情况")
+        return preg_replace('/^[\d.-]+\s*/', '', $lastPart);
     }
 }

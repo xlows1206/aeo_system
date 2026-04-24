@@ -115,7 +115,7 @@ class UserController extends BaseController
             Db::table('users')->where('id', $user->id)->update(['master_id' => $user->id]);
 
             // 处理新账号的文件夹范围
-//            $this->service->getDrive()->push(new ProcessUserBaseData($user->id));
+            $this->service->getDrive()->push(new ProcessUserBaseData($user->id));
         }
         return $this->responseService->success();
     }

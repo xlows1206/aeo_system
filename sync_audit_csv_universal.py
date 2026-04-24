@@ -55,10 +55,34 @@ UPDATE `folders` SET `name` = '五、进出口商品检验业务' WHERE `id` = 2
 UPDATE `folders` SET `name` = '八、物流运输业务' WHERE `id` = 268;
 UPDATE `folders` SET `name` = '六、代理报关业务' WHERE `id` = 300;
 
--- 2. 清理旧的绑定关系和单项标准的子项 (防止编号重复)
-TRUNCATE TABLE `folder_check_files`;
-DELETE FROM `folders` WHERE `standard_id` = 6 AND `id` > 500;
-DELETE FROM `folder_closure` WHERE descendant NOT IN (SELECT id FROM folders);
+-- 2. 清理旧的模板数据
+DELETE FROM `folder_check_files` WHERE `master_id` = 0;
+DELETE FROM `folders` WHERE `master_id` = 0 OR `standard_id` = 7;
+DELETE FROM `folder_closure` WHERE descendant NOT IN (SELECT id FROM folders) OR ancestor NOT IN (SELECT id FROM folders);
+
+-- 3. 显式创建根目录模板 (master_id = 0, parent_id = 0)
+INSERT IGNORE INTO `folders` (`id`, `name`, `standard_id`, `user_id`, `master_id`, `parent_id`, `created_at`, `updated_at`) VALUES
+(264, '一、加工贸易以及保税进出口业务', 6, 1, 0, 0, NOW(), NOW()),
+(265, '二、卫生检疫业务', 6, 1, 0, 0, NOW(), NOW()),
+(266, '三、动植物检疫业务', 6, 1, 0, 0, NOW(), NOW()),
+(267, '五、进出口商品检验业务', 6, 1, 0, 0, NOW(), NOW()),
+(300, '六、代理报关业务', 6, 1, 0, 0, NOW(), NOW()),
+(268, '八、物流运输业务', 6, 1, 0, 0, NOW(), NOW()),
+(500, '一、内部控制标准', 2, 1, 0, 0, NOW(), NOW()),
+(504, '一、内部控制标准', 4, 1, 0, 0, NOW(), NOW()),
+(510, '一、内部控制标准', 3, 1, 0, 0, NOW(), NOW()),
+(515, '一、内部控制标准', 5, 1, 0, 0, NOW(), NOW()),
+(527, '二、财务状况标准', 1, 1, 0, 0, NOW(), NOW()),
+(520, '三、守法规范标准', 5, 1, 0, 0, NOW(), NOW()),
+(524, '三、守法规范标准', 4, 1, 0, 0, NOW(), NOW()),
+(531, '四、贸易安全标准', 3, 1, 0, 0, NOW(), NOW()),
+(540, '四、贸易安全标准', 2, 1, 0, 0, NOW(), NOW()),
+(546, '四、贸易安全标准', 5, 1, 0, 0, NOW(), NOW()),
+(553, '四、贸易安全标准', 4, 1, 0, 0, NOW(), NOW());
+
+-- 4. 初始化根节点的闭包记录
+INSERT IGNORE INTO folder_closure (ancestor, descendant, distance)
+SELECT id, id, 0 FROM folders WHERE master_id = 0 AND parent_id = 0;
 
 DROP PROCEDURE IF EXISTS SyncUniversal;
 DELIMITER //
@@ -100,10 +124,10 @@ def generate_path_sql(path_str, dept_name):
         
         # SQL logic to find or create
         local_sql.append(f"""
-    SET {var_name} = (SELECT id FROM folders WHERE name = '{name}' AND parent_id = {prev_var} AND standard_id = {std_id} LIMIT 1);
+    SET {var_name} = (SELECT id FROM folders WHERE name = '{name}' AND parent_id = {prev_var} AND standard_id = {std_id} AND master_id = 0 LIMIT 1);
     IF {var_name} IS NULL THEN
         INSERT INTO folders (name, standard_id, user_id, master_id, parent_id, created_at, updated_at, department)
-        VALUES ('{name}', {std_id}, 1, 2, {prev_var}, NOW(), NOW(), '{dept_name}');
+        VALUES ('{name}', {std_id}, 1, 0, {prev_var}, NOW(), NOW(), '{dept_name}');
         SET {var_name} = LAST_INSERT_ID();
         INSERT IGNORE INTO folder_closure (ancestor, descendant, distance) VALUES ({var_name}, {var_name}, 0);
         INSERT IGNORE INTO folder_closure (ancestor, descendant, distance)
@@ -137,13 +161,13 @@ for _, row in df.iterrows():
         if check_text == 'nan': check_text = ''
         
         type_map = {
-            "关键词检测": 1,
-            "上传即为通过": 2,
-            "AI内容理解": 3
+            "AI内容理解": 1,
+            "关键词检测": 2,
+            "上传即为通过": 3
         }
-        check_type_code = type_map.get(check_type_str, 2)
+        check_type_code = type_map.get(check_type_str, 3)
 
-        full_sql.append(f"    INSERT INTO `folder_check_files` (`folder_id`, `folder_name`, `standard_id`, `audit_status`, `check_name`, `check_type`, `check_text`, `created_at`, `updated_at`) VALUES ({fid_var}, '{raw_name}', {s_id}, 0, '{raw_name}', {check_type_code}, '{check_text}', NOW(), NOW());")
+        full_sql.append(f"    INSERT INTO `folder_check_files` (`folder_id`, `folder_name`, `standard_id`, `master_id`, `audit_status`, `check_name`, `check_type`, `check_text`, `created_at`, `updated_at`) VALUES ({fid_var}, '{raw_name}', {s_id}, 0, 0, '{raw_name}', {check_type_code}, '{check_text}', NOW(), NOW());")
         full_sql.append(f"    UPDATE `folders` SET `description` = '{instruction}' WHERE `id` = {fid_var};")
 
 full_sql.append("""

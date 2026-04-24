@@ -22,6 +22,11 @@ class LegalComplianceHandler extends AbstractHandler
         $errors = [];
 
         foreach ($data as $item) {
+            if (($item['result'] ?? '') === 'error') {
+                $errors[] = "[ERROR] 资料解析失败: " . ($item['reason'] ?? '请检查文件清晰度');
+                continue;
+            }
+
             if (isset($item['is_title_correct']) && $item['is_title_correct'] === false) {
                 $errors[] = "文件标题/类型不匹配 (" . ($item['reason'] ?? '请上传无犯罪记录证明') . ")";
                 continue;
@@ -44,5 +49,14 @@ class LegalComplianceHandler extends AbstractHandler
         }
 
         return empty($errors) ? null : implode('; ', $errors);
+    public function getSuccessMessages(array $data, array $context): array
+    {
+        $success = [];
+        foreach ($data as $item) {
+            if (($item['has_no_criminal_record'] ?? false) === true && !empty($item['name'])) {
+                $success[] = "{$item['name']}的无犯罪记录证明校验通过。";
+            }
+        }
+        return array_unique($success);
     }
 }

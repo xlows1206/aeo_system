@@ -13,7 +13,8 @@ previous_version/
 *.tar.gz
 
 # Environment and Logs
-.env
+.env*
+*.key
 runtime/
 storage/logs/*.log
 mysql_data/

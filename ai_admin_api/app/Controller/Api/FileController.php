@@ -36,7 +36,8 @@ class FileController extends BaseController
             ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
             ->leftJoin('folders as p', 'p.id', '=', 'f.parent_id')
             ->leftJoin('folders as gp', 'gp.id', '=', 'p.parent_id')
-            ->where('fcf.standard_id', $standardId);
+            ->where('fcf.standard_id', $standardId)
+            ->where('fcf.master_id', $masterId);
 
         // 如果是单项标准(ID=6)，根据公司设置的项目进行过滤
         if ($standardId === 6 && !$ignoreBind) {
@@ -50,7 +51,7 @@ class FileController extends BaseController
             }
         }
 
-        $projects = $query->select('f.*', 'p.name as parent_name', 'gp.name as root_name', 'fcf.id as fcf_id')
+        $projects = $query->select('f.*', 'p.name as parent_name', 'gp.name as root_name', 'fcf.id as fcf_id', 'fcf.check_type')
             ->get();
 
         $processedFolders = [];
@@ -69,6 +70,7 @@ class FileController extends BaseController
                 'audit_status' => $status,
                 'parent_id' => 'f' . $f->parent_id,
                 'description' => $f->description ?? '',
+                'check_type' => $f->check_type ?? 0,
             ];
         }
 
@@ -116,6 +118,7 @@ class FileController extends BaseController
         $folderId = $request->input('folder_id', 0);
         $standardId = (int)$request->input('standard_id', 0);
         $checkFolderIds = Db::table('folder_check_files')
+            ->where('master_id', $masterId)
             ->pluck('folder_id')
             ->map(fn ($id) => (int)$id)
             ->toArray();
@@ -238,8 +241,10 @@ class FileController extends BaseController
         $standardId = (int)$request->input('standard_id', 0);
         $masterId = $auth->master_id;
 
-        // 查询所有审核项目文件夹的 ID（以 folder_check_files 为权威来源）
-        $query = Db::table('folder_check_files')->where('standard_id', $standardId);
+        // 查询所有审核项目文件夹的 ID（以 folder_check_files 为权威来源，增加 master_id 过滤）
+        $query = Db::table('folder_check_files')
+            ->where('standard_id', $standardId)
+            ->where('master_id', $masterId);
         
         // 如果是单项标准(ID=6)，进行过滤
         if ((int)$standardId === 6) {
@@ -258,8 +263,13 @@ class FileController extends BaseController
         $folderQuery = Db::table('folders as f')
             ->leftJoin('folders as p', 'p.id', '=', 'f.parent_id')
             ->leftJoin('folders as gp', 'gp.id', '=', 'p.parent_id')
+            ->leftJoin('folder_check_files as fcf', function($join) use ($masterId) {
+                $join->on('fcf.folder_id', '=', 'f.id')
+                    ->where('fcf.master_id', '=', $masterId);
+            })
             ->where('f.standard_id', $standardId)
-            ->select('f.*', 'p.name as p_name', 'gp.name as gp_name');
+            ->where('f.master_id', $masterId)
+            ->select('f.*', 'p.name as p_name', 'gp.name as gp_name', 'fcf.check_type');
 
         // 单项标准树形过滤
         if ((int)$standardId === 6) {
@@ -299,6 +309,7 @@ class FileController extends BaseController
                     'name'            => $name,
                     'is_check_folder' => isset($checkFolderIdMap[(int)$i->id]),
                     'audit_status'    => $i->audit_status,
+                    'check_type'      => $i->check_type ?? 0,
                 ];
             })
             ->toArray();

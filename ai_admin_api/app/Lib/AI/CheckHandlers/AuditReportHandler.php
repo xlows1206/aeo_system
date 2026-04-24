@@ -54,5 +54,21 @@ class AuditReportHandler extends AbstractHandler
         }
 
         return empty($errors) ? null : implode('; ', $errors);
+    public function getSuccessMessages(array $data, array $context): array
+    {
+        $success = [];
+        // 尝试从数据中提取成功的年份信息
+        foreach ($data as $pageResult) {
+            if (!is_array($pageResult)) continue;
+            foreach ($pageResult as $item) {
+                if (($item['status'] ?? '') === 'pass') {
+                    $year = $this->normalizeYear($item['year'] ?? '');
+                    if ($year) {
+                        $success[] = "{$year}年度: 审计意见为'{$item['review']}' (符合要求)";
+                    }
+                }
+            }
+        }
+        return array_unique($success);
     }
 }

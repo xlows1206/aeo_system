@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Model\Folder;
 use App\Support\FolderDisplayName;
 use App\Controller\BaseController;
 use Hyperf\DbConnection\Db;
@@ -15,7 +16,59 @@ use Hyperf\HttpServer\Contract\RequestInterface;
 #[Controller(prefix: 'api/v1/folder'), Middleware('App\Middleware\UserAuthMiddleware')]
 class FileFolderController extends BaseController
 {
-    #[RequestMapping(path: "lists", methods: "get")]
+    #[RequestMapping(path: "", methods: "POST")]
+    public function store(RequestInterface $request)
+    {
+        $auth = $request->input('Auth');
+        $userId = $auth->id;
+        $masterId = $auth->master_id;
+
+        $folder = new Folder();
+        $folder->name = $request->input('name');
+        $folder->parent_id = (int)$request->input('parent_id', 0);
+        $folder->standard_id = (int)$request->input('standard_id', 0);
+        $folder->user_id = $userId;
+        $folder->master_id = $masterId;
+        $folder->save();
+
+        return $this->responseService->success();
+    }
+
+    #[RequestMapping(path: "{id}/rename", methods: "PATCH")]
+    public function rename(RequestInterface $request, $id)
+    {
+        $folder = Folder::find($id);
+        if (!$folder) {
+            return $this->responseService->error('文件夹不存在');
+        }
+        $folder->name = $request->input('name');
+        $folder->save();
+        return $this->responseService->success();
+    }
+
+    #[RequestMapping(path: "{id}", methods: "DELETE")]
+    public function destroy($id)
+    {
+        $folder = Folder::find($id);
+        if (!$folder) {
+            return $this->responseService->error('文件夹不存在');
+        }
+        $folder->delete();
+        return $this->responseService->success();
+    }
+
+    #[RequestMapping(path: "{id}/move", methods: "PATCH")]
+    public function move(RequestInterface $request, $id)
+    {
+        $folder = Folder::find($id);
+        if (!$folder) {
+            return $this->responseService->error('文件夹不存在');
+        }
+        $folder->parent_id = (int)$request->input('folder_id', 0);
+        $folder->save();
+        return $this->responseService->success();
+    }
+    #[RequestMapping(path: "lists", methods: "GET")]
     public function lists(RequestInterface $request)
     {
         $auth = $request->input('Auth');

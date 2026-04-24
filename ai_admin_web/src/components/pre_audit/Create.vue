@@ -2,30 +2,26 @@
   <div class="main">
     <n-drawer v-model:show="params.active" :width="600" placement="right">
       <n-drawer-content :title="props.drawerParams.title">
-        <n-scrollbar x-scrollable style="height: 38px" id="scrollbar" ref="scrollbarRef">
-          <div style="padding: 5px">
-            <n-steps
-              :current="params.current"
-              :status="params.currentStatus"
-              size="small"
-              @update:current="changeCurrent"
-            >
-              <n-step
-                v-for="(item, index) in params.preLists"
-                :disabled="item.disabled"
-                :key="index"
-                :id="`step-${index + 1}`"
-                :title="item.name"
-              />
-            </n-steps>
-          </div>
-        </n-scrollbar>
+        <div class="tabs-container">
+          <n-tabs
+            v-model:value="params.current"
+            type="card"
+            @update:value="changeCurrent"
+          >
+            <n-tab
+              v-for="(item, index) in params.preLists"
+              :key="index"
+              :name="index + 1"
+              :label="item.name"
+            />
+          </n-tabs>
+        </div>
 
         <div v-for="(item, index) in params.preLists">
           <component
             v-if="params.current - 1 === index"
             createType="create"
-            class="page-item"
+            class="page-item mt-4"
             @next="nextCurrent"
             :maxPre="params.preLists.length"
             :currentData="props.drawerParams.data"
@@ -69,8 +65,6 @@ import {reactive, ref, toRaw} from 'vue';
     perData: {},
   });
 
-  const scrollbarRef: any = ref(null);
-
   apiGetStandard().then((res) => {
     params.preLists = res.lists;
     // params.current = res.first_standard;
@@ -78,10 +72,6 @@ import {reactive, ref, toRaw} from 'vue';
 
   const changeCurrent = (index: number) => {
     params.current = index;
-    const scroll =
-      document.getElementById(`step-${index}`)?.offsetLeft -
-      document.getElementById(`scrollbar`)?.offsetLeft;
-    scrollbarRef.value.scrollTo(scroll);
   };
 
   const nextCurrent = (data: any) => {
@@ -155,4 +145,17 @@ import {reactive, ref, toRaw} from 'vue';
   });
 </script>
 
-<style scoped lang="less"></style>
+<style scoped lang="less">
+:deep(.n-drawer-header__main) {
+  color: #d4a017 !important;
+  font-weight: 800;
+}
+
+.tabs-container {
+  :deep(.n-tabs-tab--active) {
+    .n-tabs-tab__label {
+      color: #d4a017 !important;
+    }
+  }
+}
+</style>

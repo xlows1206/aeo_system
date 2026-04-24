@@ -13,14 +13,14 @@
             class="project-collapse-item"
           >
             <template #header>
-              <div class="project-header">
-                <span class="project-num">{{ index + 1 }}.</span>
-                <span class="project-title">{{ extractProjectName(project.folder_name) }}</span>
-                <div class="project-badges">
-                  <n-tag v-if="project.audit_result" :type="project.audit_result.is_access == 1 ? 'success' : 'error'" size="small" round>
-                    {{ project.audit_result.is_access == 1 ? '合格' : '不合格' }}
-                  </n-tag>
+              <div class="flex items-center justify-between w-full">
+                <div class="flex items-center">
+                  <span class="text-sm font-bold text-gray-800">
+                    {{ extractProjectName(project.folder_name) }}
+                  </span>
+
                 </div>
+                <!-- 移除了项目列表中的状态标签 -->
               </div>
             </template>
             
@@ -69,14 +69,19 @@
 
       </n-drawer-content>
     </n-drawer>
+
+    <n-modal v-model:show="params.showExample" preset="card" :title="params.exampleTitle" style="width: 800px">
+      <n-image width="100%" :src="params.exampleUrl" />
+    </n-modal>
   </div>
 </template>
 
 <script lang="ts" setup>
-  import { reactive, computed } from 'vue';
-  import { NDrawer, NDrawerContent, NCollapse, NCollapseItem, NTag, NTimeline, NTimelineItem, NEmpty } from 'naive-ui';
+  import { reactive, computed, ref } from 'vue';
+  import { NDrawer, NDrawerContent, NCollapse, NCollapseItem, NTag, NTimeline, NTimelineItem, NEmpty, NButton, NModal, NImage, NIcon } from 'naive-ui';
   import { apiGetPreAuditLog } from '@/api/system/pre';
   import { extractProjectName } from '@/utils/index';
+  import { EyeOutline } from '@vicons/ionicons5';
 
   const props = defineProps({
     drawerParams: {
@@ -96,6 +101,9 @@
     auditResults: [],
     status_cn: ['正在审核', '不合格', '', '合格'],
     status_type: ['default', 'error', 'warning', 'success'],
+    showExample: false,
+    exampleUrl: '',
+    exampleTitle: '',
   });
 
   /**
@@ -110,7 +118,7 @@
       if (!groups[folderId]) {
         groups[folderId] = {
           folder_id: folderId,
-          folder_name: file.folder_name || '未归类项目',
+          folder_name: file.project_name || file.folder_name || '未归类项目',
           files: [],
           audit_result: null
         };
@@ -120,26 +128,54 @@
 
     // 2. 关联审计结果
     params.auditResults.forEach(result => {
-      // 通过 folder_name 或 check_id 匹配。通常 folder_name 是唯一的项目标识
-      // 先寻找名称一致的组
-      const group = Object.values(groups).find(g => g.folder_name === result.folder_name);
+      // 增强匹配鲁棒性：去除空格并尝试完全匹配、提取名称匹配、或正则清洗后匹配
+      const resultName = result.folder_name.trim();
+      const normalize = (str: string) => str.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+      const group = Object.values(groups).find(g => {
+          const gn = g.folder_name.trim();
+          return gn === resultName || 
+                 extractProjectName(gn) === extractProjectName(resultName) ||
+                 normalize(gn) === normalize(resultName);
+      });
+      
       if (group) {
         group.audit_result = result;
+        group.check_type = result.check_type;
       } else {
-        // 如果没找到对应的文件组（可能只审计了文件夹但没上传文件，或者名称匹配不上）
-        // 这里创建一个空的组展示结果
         const fakeId = `result-${result.folder_name}`;
         groups[fakeId] = {
           folder_id: fakeId,
           folder_name: result.folder_name,
           files: [],
-          audit_result: result
+          audit_result: result,
+          check_type: result.check_type
         };
       }
     });
 
     return Object.values(groups).sort((a, b) => (typeof a.folder_id === 'number' ? a.folder_id - b.folder_id : 1));
   });
+
+  const getExampleImage = (name: string) => {
+      if (name.includes('审计报告')) return '/examples/sample_audit_report.png';
+      if (name.includes('合规') || name.includes('守法') || name.includes('惩戒')) return '/examples/sample_compliance.png';
+      if (name.includes('资产负债') || name.includes('财务') || name.includes('报告')) return '/examples/sample_balance_sheet.png';
+      if (name.includes('无犯罪')) return '/examples/sample_no_criminal.png';
+      if (name.includes('货物安全')) return '/examples/sample_cargo_security.png';
+      return '';
+  };
+
+  const handleViewExample = (e: MouseEvent, project: any) => {
+      e.stopPropagation();
+      const url = getExampleImage(project.folder_name);
+      if (url) {
+          params.exampleUrl = url;
+          params.exampleTitle = `${extractProjectName(project.folder_name)} - 示例文件`;
+          params.showExample = true;
+      } else {
+          window['$message'].info('暂无该项目的示例图片');
+      }
+  };
 
   const openDrawer = () => {
     params.active = true;
@@ -170,11 +206,16 @@ export default {
 </script>
 
 <style scoped lang="less">
+:deep(.n-drawer-header__main) {
+  color: #d4a017 !important;
+  font-weight: 800;
+}
+
 .section-title {
   font-size: 14px;
   font-weight: 700;
   color: #333;
-  border-left: 4px solid #18a058;
+  border-left: 4px solid #d4a017;
   padding-left: 10px;
   margin-bottom: 16px;
   letter-spacing: 0.5px;
@@ -251,7 +292,7 @@ export default {
 }
 
 .file-dot {
-  color: #18a058;
+  color: #d4a017;
 }
 
 .empty-text {

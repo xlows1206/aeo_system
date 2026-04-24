@@ -14,24 +14,24 @@ class FineAmountHandler extends AbstractHandler
     public function performAudit(array $data, array $context): ?string
     {
         $companyName = $context['company_name'] ?? '';
-        $notSelfTotal = $context['not_self_total'] ?? 0;
         
         $totalAmount = 0;
-        $violationCount = 0;
+        $errors = [];
 
         foreach ($data as $item) {
+            if (($item['result'] ?? '') === 'error') {
+                $errors[] = "[ERROR] 资料解析失败: " . ($item['reason'] ?? '未知错误');
+                continue;
+            }
+
             // 匹配公司名称
             if (($item['company'] ?? '') === $companyName) {
-                $totalAmount += floatval($item['amount'] ?? 0);
-                // 这里逻辑参考原代码：如果不是自查则计入比例
-                // 注意：原代码逻辑稍微有点混乱，一部分在行政处罚一部分在比例检测
-                // 我们在各 Handler 中各施其职
+                $totalAmount += $this->normalizeNumber($item['amount'] ?? 0);
             }
         }
 
-        $errors = [];
         if ($totalAmount > 50000) {
-            $errors[] = "行政被处罚金额累计超过5万元 (当前: {$totalAmount})";
+            $errors[] = "行政被处罚金额累计超过 5 万元 (当前: {$totalAmount} 元)";
         }
 
         return empty($errors) ? null : implode('; ', $errors);

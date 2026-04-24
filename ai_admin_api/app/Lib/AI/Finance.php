@@ -123,10 +123,12 @@ class Finance
             [
                 'role' => 'user',
                 'content' => '
-        # 任务
-请你一步步仔细思考，根据<数据>中每一年的负债率 liability_ratio，然后按<规则>判断输出，不要输出其他任何内容。
+# 任务
+请你一步步仔细思考，根据<数据>中每一年的负债率 liability_ratio，然后按<规则>判断输出。
 # 规则
 如果至少有1年"liability_ratio"不超过95.00%，请按下面格式输出"true"，如果均超过95.00%，输出"false"。
+# 注意
+请仅输出 JSON 格式数据，严禁输出任何解释性文字或 Markdown 标记。
 参考格式：{"result":true}
 # 数据
 ' . $data

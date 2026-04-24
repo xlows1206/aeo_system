@@ -1,36 +1,51 @@
-# AEO System Data Pipeline
+# AEO 系统数据流逻辑 (Data Pipeline)
 
-## 1. 核心流程：路径即真理 (Path as Truth)
+## 1. 登录与身份校验流
+- **输入**: 用户名、密码
+- **处理**: `AuthController@login` 验证，生成 JWT。
+- **输出**: 包含 `access_token` 和 `user_id`, `master_id` 的 JSON。
 
-系统以 `/Users/aaron.w/Desktop/aeo_system/audit_list_3.csv` 为权威数据源。
+## 2. 目录初始化流 (Tenant Onboarding)
+- **输入**: `master_id` (新注册企业 ID)
+- **处理**: `FolderService::initTenantFolders` 递归克隆 `master_id=0` 的目录结构。
+- **状态**: 通畅。已解决克隆时父子关系混乱问题。
 
-### 数据同步链路
-1. **物理层**：根据审计要求在 `单项标准/` 或 `通用标准/` 下维护物理文件夹。
-2. **配置层**：在 `audit_list_3.csv` 中维护 `脱敏文件路径`，必须与物理路径 1:1 对应。
-3. **逻辑层**：执行 `python3 sync_audit_csv_final.py`。
-   - **自动化路径构建**：脚本会自动解析 CSV 路径。若数据库中不存在对应文件夹，脚本将自动在 `folders` 表中创建节点并修复 `folder_closure`。
-   - **项目绑定**：脚本清除并重置 `folder_check_files`，将审计项与文件夹 ID 进行 100% 精准绑定。
-4. **持久化层**：脚本生成的变更可反向导出至 `ai_admin_api/folders_inserts.sql`。
-5. **缓存层**：必须执行 `redis-cli flushall` 以使变更在前端即刻生效。
+## 3. 业务主体项目绑定流
+- **输入**: `types` (业务类型 ID 集合)
+- **处理**: `CompanyController@store` 保存类型并基于名称映射 `master_id=0` 的模板项目到租户本地 ID。
+- **输出**: `company_info.bind_projects` 存储本地项目 ID。
 
-## 2. 关键节点状态
+## 4. 资料管理 - 列表展示流
+- **输入**: `standard_id`, `folder_id`
+- **处理**: `FileController@lists` 获取树形结构；`FileController@getPan` 获取当前文件夹内容。
+- **输出**: 扁平化的文件与文件夹列表，带面包屑路径。
 
-| 环节节点 | 输入值 | 输出值 | 格式/示例 | 通畅状态 | 备注 |
-|---|---|---|---|---|---|
-| CSV 配置 | 原始 Prd 需求 | `audit_list_3.csv` | 包含 `检测方式`, `检测关键字` | ✅ | 已更新关键词规则表 |
-| 物理目录 | 映射规则 | 磁盘实际文件夹 | `10-历年法检查验...` | ✅ | 已创建 Category 五新增目录 |
-| SQL 生成 | `audit_list_3.csv` | `sync_universal.sql` | `TRUNCATE TABLE...` | ✅ | 生成成功 |
-| 闭包表重建 | folders 表 | folder_closure 表 | `(ancestor, descendant)` | ✅ | 通过 SQL 存储过程自动维护 |
-| AI 关键词检测 | PDF / Image | AI 判定结果 (前2页) | 文本关键词命中 | ✅ | 适用于制度/轨迹类 |
-| AI 语义理解 | 图像 + 公司上下文 | 结构化判定 (Json) | 标题、意图、身份比对 | ✅ | 适用于无犯罪/财务类 |
-| 上传拦截引导 | 公司设置状态 | 前端 UI 状态 | 置灰按钮 + 引导卡片 | ✅ | 解决数据缺失导致解析失败 |
+## 5. 文件移动流 (File Move Logic) - 2026-04-25 更新
+- **输入**: `file_id` 或 `folder_id`, `target_folder_id`
+- **处理**: 
+    - 前端 `Move.vue` 根据 `props.projectId`（来自面包屑 `paths[1]`）从全局树中提取该项目的子树。
+    - **隔离策略**: 移动窗口仅展示当前审核项目内的子文件夹，禁止跨项目移动。
+    - **符号处理**: 提交时剥离 `f` 前缀。
+- **输出**: 更新数据库 `files.folder_id` 或 `folders.parent_id`。
+- **状态**: 修复中。已纠正项目 ID 提取索引。
 
-## 3. 当前值示例 (Example)
+## 6. AI 审核任务流 (Aggregation Mode)
+- **输入**: 文件夹下的文件集合
+- **处理**: `GetAiResult` 异步任务，按审核项聚合结论，更新 `pre_audit_results`。
+- **鲁棒性更新 (2026-04-25)**: 
+    - 解决了 AI 返回非标准 JSON 时导致的 `TypeError` 崩溃。
+    - 将捕获范围从 `\Exception` 扩大到 `\Throwable`，防止异常导致任务无限重试。
+    - 增加了 `is_array` 校验及更详尽的错误日志记录。
+- **check_type 标准 (V4)**:
+    - `1`: AI内容理解 (Semantic)
+    - `2`: 关键词检测 (Keyword Match)
+    - `3`: 上传即为通过 (Simple Pass)
+- **输出**: 结构化 JSON 结论 (`result_str`)。
+- **匹配与映射优化 (V4.1)**:
+    - **逻辑**: `CheckHandlerFactory` 增加“两步清洗法”，先剥离 `Category 、 ` 路径，再剥离 `序号-` 前缀，解决带装饰名称无法命中 AI 处理器的问题。
+    - **错误反馈机制**: AI Prompt 强制输出 `result: error` 状态。后端识别此状态并添加 `[ERROR]` 前缀，以明确区分“解析失败”与“合规不通过”。
 
-- **物理路径**: `单项标准/八、物流运输业务/21-运输工具行驶轨迹/21-1-定位系统车载终端管理制度`
-- **CSV 脱敏路径**: `单项标准/八、物流运输业务/21-运输工具行驶轨迹/21-1-定位系统车载终端管理制度`
-- **数据库 ID**: `folders.id = 899` (示例)
-- **匹配状态**: 100%
-
----
-*Updated by Antigravity - 2026-04-20 (Implemented Auto-heal Path Construction)*
+## 7. 预审文件采集流
+- **输入**: `api/v1/file/lists` 返回的树形 JSON。
+- **处理**: `Tree.vue` 递归函数 `getAllFiles` 遍历子目录。
+- **输出**: 平展化的文件列表，带路径前缀（如 `文件夹 / 文件.pdf`）。

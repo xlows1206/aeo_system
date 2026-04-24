@@ -321,32 +321,38 @@ WHERE fcf.standard_id = <目标 standard_id> AND f.id IS NULL;
 
 ---
 
-## 7. 企业业务主体性质与检测项目绑定 (2026-04-20 新增)
+## 7. 企业业务主体性质与检测项目绑定 (2026-04-24 架构升级)
 
-### 7.1 核心逻辑
-- **业务主体性质**：主账号在“系统设置”中可多选：物流、仓储、报关、外贸。
+### 7.1 核心逻辑 (多租户动态映射)
+- **多租户隔离**：自 2026-04-24 起，所有租户数据通过 `master_id` 物理隔离。
 - **动态展示白名单**：前端“评估/评估详情”与“资料管理”中的“单项标准 (standard_id=6)”部分，会根据该公司 `bind_projects` 字段中存储的项目 ID 列表进行实时过滤。
-- **自动进度重算**：过滤后的项目总数将作为进度计算的分母，仅对绑定的项目进行合规统计。
+- **云端/本地对齐策略**：由于不同环境的数据库自增 ID（Auto-Increment IDs）不一致，系统放弃了硬编码 ID 绑定，升级为**基于名称的动态映射**。
 
-### 7.2 逻辑映射规则
-
-| 业务主体性质 | 关联检测项目 (folder_check_files.id) | 对应大类 |
-|---|---|---|
-| 物流 | 58, 59, 60, 61, 62 | 八、物流运输业务 |
-| 仓储 | 55, 54 | 一、加工贸易；二、卫生检疫 |
-| 报关 | 55, 53, 50, 57, 63-71 | 一、二、三、五、六(全) |
-| 外贸 | 55, 53, 54, 50, 57 | 一、二、三、五、单项标准通用 |
+### 7.2 动态映射流程
+1. **模板定义**：在 `company_types.note` 中存储 `master_id=0`（系统模板）下的项目 ID。
+2. **实时转换**：`CompanyController@types` 接口被调用时：
+   - 提取 `note` 里的模板 ID 集合。
+   - 查询这些 ID 在 `master_id=0` 对应的 `文件夹名称` + `项目名称`。
+   - 在当前登录用户的 `master_id` 下，通过 `名称` 反查对应的本地 ID。
+   - 返回给前端当前租户可用的真实 ID。
 
 ### 7.3 数据库实现详情
 - **`company_info` 表**：
   - `types` (varchar)：存储业务主体 ID 集合（逗号分隔，如 `1,3`）。
-  - `bind_projects` (text)：存储最终生效的 `folder_check_files.id` 集合（逗号分隔）。
+  - `bind_projects` (text)：存储最终生效的 `folder_check_files.id` 集合（租户本地 ID）。
 - **`company_types` 表**：
-  - `note` (varchar)：存储该类型默认绑定的项目清单建议。
+  - `note` (TEXT)：存储该类型建议绑定的**模板项目 ID**。已从 `varchar(255)` 扩容为 `TEXT` 以支持“报关”等包含大量项目的类别。
+- **`folders` & `folder_check_files`**：新增 `master_id` 字段（默认 0），所有租户数据必须带有正确的 `master_id`。
 
-### 7.4 开发变更点
-- **后端**：`FileController@allProjects` 及 `FileController@lists` 增加了针对 `standard_id=6` 且 `bind_projects` 非空的 `WHERE IN` 过滤。
-- **前端**：`company/index.vue` 增加了基于计算属性 `filteredProjectCategories` 的分块动态展示逻辑。
+### 7.4 关键维护命令
+- **租户初始化/同步**：
+  ```bash
+  # 将 master_id=0 的结构克隆给指定的租户 (如 id=2)
+  # --force 会删除该租户旧数据并重新克隆
+  php bin/hyperf.php folder:init -m 2 --force
+  ```
+- **云端 ID 校准 (数据迁移时使用)**：
+  通过 SQL 子查询基于 `f.name` 动态更新 `company_types.note`，避免 ID 错位。
 
 ---
 
@@ -370,4 +376,112 @@ WHERE fcf.standard_id = <目标 standard_id> AND f.id IS NULL;
 
 ---
 
-*Updated by Antigravity - 2026-04-21 (AI Detection Upgrade & PDF 2-Page Limit)*
+## 9. 生产环境同步总结 (2026-04-24)
+
+### 9.1 核心修复记录
+- **500 错误消除**：通过 `INNER JOIN` 和 `null` 容错处理，解决了因 `folder_id` 孤儿记录导致的 API 崩溃。
+- **字段类型扩容**：`ALTER TABLE company_types MODIFY COLUMN note TEXT;` 解决了报关项目过多导致的 Data Too Long 报错。
+- **多租户数据对齐**：通过 `folder:init` 确保了租户层级与模板层级 100% 同步。
+
+### 9.2 缓存刷新协议
+每次涉及“业务主体映射”或“目录结构”修改后，**必须**执行：
+1. `docker restart hyperf-skeleton` (或对应 php 进程重启)
+2. `redis-cli flushall` (强制清理元数据缓存)
+3. 浏览器 `Ctrl + F5` (清理前端 Axios 缓存)
+
+---
+
+### 🔴 问题：由于 SQL 字段数量不匹配导致审核结果写入失败 (1136 Error)
+
+**发现时间**：2026-04-24
+**现象**：云端提交审核后状态显示“失败”，且前端不显示任何结果。日志报错：`SQLSTATE[21S01]: Insert value list does not match column list: 1136 Column count doesn't match value count at row 4`。
+
+**根本原因**：
+1.  **数组结构不统一**：在 `GetAiResult.php` 中，混合了 AI 审核项（7个字段，含 `result_str`）和非 AI 审核项（6个字段）。
+2.  **批量插入特性**：Hyperf 的 `insert()` 方法会以数组第一个元素为准生成列名列表。如果首个元素是 6 列，后续遇到 7 列的元素就会因字段溢出而导致整个事务回滚并报错。
+
+**修复步骤**：
+1.  **统一字段 Schema**：在 `GetAiResult.php` 中强制所有审核分支输出包含 `result_str` 在内的完整 7 字段结构。
+2.  **显式类型转换**：对插入的数据执行 `(int)` 和 `(string)` 强制转换，增强数据入库的安全性。
+3.  **重启队列**：由于常驻进程缓存，修改后必须执行 `kill` 并重启 `php bin/hyperf.php queue:work` 才能生效。
+
+### 🔴 问题：本地 Docker 环境无法处理 PDF 审核
+
+**发现时间**：2026-04-24
+**现象**：本地测试 PDF 审核时直接崩溃或无响应。
+
+**原因**：
+1.  **工具缺失**：本地 Alpine 镜像未安装 `ghostscript`。
+2.  **配置缺失**：`.env` 文件中缺少 OSS 相关的 KEY 与 Endpoint 定义。
+
+**修复步骤**：
+1.  **安装依赖**：运行 `apk add ghostscript imagemagick`。
+2.  **补全配置**：在本地 `.env` 补齐 OSS 模板并重启容器。
+
+---
+
+## 10. AI 审核展示与结论透传逻辑升级 (2026-04-24)
+
+### 10.1 核心展示范式转移
+- **从“文件”到“项目”**：系统现已废弃“每个文件显示一行结论”的模式，升级为**按审核项 (Check Project) 聚合**。同一项目下的多个关联文件会合并处理，输出唯一的结构化结论，彻底解决了历史记录重复的问题。
+- **UI 纯净匹配**：前端 `Info.vue` 引入了 `normalize` 算法，忽略 `、` 和 `-` 的符号差异，确保物理路径与审核规则 100% 匹配。
+
+### 10.2 结论分层透传体系 (Conclusion Layering)
+为了平衡“审核透明度”与“话术标准化”，系统建立了三级结论反馈机制：
+
+1. **AI 深度结论 (High Transparency)**：
+   - **适用项**：资产负债率、审计报告、无犯罪证明等。
+   - **实现**：通过 `AbstractHandler::getSuccessMessages` 钩子，将 AI 提取的原始数据（如：负债率 65.4%、无保留审计意见）直接透传至前端。
+2. **标准合格话术 (Standardized)**：
+   - **适用项**：关键字检测、上传即通过项目。
+   - **文案**：`上传的文档文件符合审核项目标准。`
+3. **AI 提取异常提醒 (Defensive)**：
+   - **适用项**：AI 无法从模糊或不匹配的文档中识别关键字段时。
+   - **文案**：`未能从文档中提取到有效的审核结论，请检查文件内容。`
+
+### 10.3 数据库与工程变更
+- **字段迁移**：`pre_audit_results` 表字段由 `failed_str` 统一更名为 `result_str` (TEXT)，存储结构化 JSON。
+- **状态判定逻辑**：
+  - 列表左侧状态：仅在“历史记录”中存在“全项合格”时标记为完成。
+  - 历史记录颜色：`status: 1` (绿色/合格)，`status: 0` (红色/不合格)。
+
+---
+
+## 11. 审核流水线标准化 (2026-04-25 V4 标准)
+
+### 11.1 Unified `check_type` 映射
+为了消除端到端识别歧义，系统统一了 `check_type` 的字段含义：
+
+| 数据库值 | 定义 | 业务描述 | 处理逻辑 |
+|---|---|---|---|
+| **1** | **AI内容理解** | AI Semantic/Numerical | 调用具体 Handler (如 FinancialRatio) |
+| **2** | **关键词检测** | Keyword Match | 调用 KeywordMatchHandler (正则/关键词) |
+| **3** | **上传即为通过** | Simple Check | 不经过 AI，直接标记合格 |
+
+### 11.2 同步与执行流
+- **权威源**：`audit_list_3.csv` 中的“检测方式”列。
+- **转换器**：`sync_audit_csv_universal.py` 负责将文字转换为上述数字编码。
+- **执行引擎**：`GetAiResult.php` 依据编码分配并行队列：
+  - `in_array(type, [1, 2])` -> 加入 AI 任务。
+  - `type == 3` -> 构造静态合格记录。
+
+---
+
+## 12. 权威数据源切换：云端至本地反向同步 (2026-04-25)
+
+### 12.1 痛点解决
+为了解决“本地脚本/CSV 与云端手动优化数据冲突”的问题，系统正式切换为 **“云端管理，本地备份”** 的反向驱动模式。云端数据库现在是审核项配置的唯一权威源。
+
+### 12.2 反向同步流 (Cloud-to-Local)
+1. **云端导出**：在服务器执行 `mysqldump ... --no-tablespaces ... > cloud_audit_structure.sql`。
+2. **反向同步**：运行本地脚本 `python3 sync_db_to_csv.py`。
+   - **逻辑**：解析 SQL 里的 `INSERT` 语句，自动将最新的 `check_type`、`check_text` 和 `folder_name` 写回本地 `audit_list_3.csv`。
+3. **代码持久化**：提交更新后的 CSV 到 Git，确保全队共享最新的审核逻辑。
+
+### 12.3 维护守则
+- **禁止**：禁止直接手动修改本地 `audit_list_3.csv` 而不同步云端。
+- **强制**：所有关于 `check_type`（1/2/3）或 `check_text`（关键词）的线上调整，必须在调整后执行一次反向同步，以保持代码库与生产环境 100% 对齐。
+
+---
+
+*Updated by Antigravity - 2026-04-25 (Cloud-to-Local Reverse Sync Workflow)*

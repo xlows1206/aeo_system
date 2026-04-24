@@ -19,35 +19,35 @@ export function apiGetStandard() {
 }
 
 
-export function apiStoreFolder(params) {
+export function apiStoreFolder(data) {
   return http.request({
     url: '/v1/folder',
     method: 'post',
-    params
+    data
   });
 }
 
-export function apiRenameFolder(params, id) {
+export function apiRenameFolder(data, id) {
   return http.request({
     url: `/v1/folder/${id}/rename`,
     method: 'patch',
-    params
+    data
   });
 }
 
-export function apiGetUploadToken(params) {
+export function apiGetUploadToken(data) {
   return http.request({
     url: `/v1/upload/getUploadToken`,
     method: 'post',
-    params
+    data
   });
 }
 
-export function apiStoreFile(params) {
+export function apiStoreFile(data) {
   return http.request({
     url: `/v1/file`,
     method: 'post',
-    params
+    data
   });
 }
 
@@ -58,27 +58,27 @@ export function apiCopyFile(id) {
   });
 }
 
-export function apiRenameFile(params, id) {
+export function apiRenameFile(data, id) {
   return http.request({
     url: `/v1/file/${id}/rename`,
     method: 'patch',
-    params
+    data
   });
 }
 
-export function apiMoveFile(params, id) {
+export function apiMoveFile(data, id) {
   return http.request({
     url: `/v1/file/${id}/move`,
     method: 'patch',
-    params
+    data
   });
 }
 
-export function apiMoveFolder(params, id) {
+export function apiMoveFolder(data, id) {
   return http.request({
     url: `/v1/folder/${id}/move`,
     method: 'patch',
-    params
+    data
   });
 }
 
@@ -103,11 +103,11 @@ export function apiGetFolderLists(params?) {
   });
 }
 
-export function apiGetFileById(params) {
+export function apiGetFileById(data) {
   return http.request({
     url: `/v1/file/getFileById`,
     method: 'post',
-    params
+    data
   });
 }
 

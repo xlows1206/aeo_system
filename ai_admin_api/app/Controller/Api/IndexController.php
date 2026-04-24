@@ -55,8 +55,9 @@ class IndexController extends BaseController
 
         $masterId = $auth->master_id;
 
-        // 获取所有标准对应的审核项目总数（以 folder_check_files 为准）
+        // 获取所有标准对应的审核项目总数（以 folder_check_files 为准，过滤 master_id）
         $folderCounts = Db::table('folder_check_files')
+            ->where('master_id', $masterId)
             ->groupBy(['standard_id'])
             ->select([Db::raw('count(*) as count'), 'standard_id'])
             ->pluck('count', 'standard_id')
@@ -66,6 +67,7 @@ class IndexController extends BaseController
         $accessCounts = Db::table('folder_check_files as fcf')
             ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
             ->where('f.master_id', $masterId)
+            ->where('fcf.master_id', $masterId)
             ->where('f.audit_status', 1)
             ->groupBy(['fcf.standard_id'])
             ->select([Db::raw('count(*) as count'), 'fcf.standard_id'])
@@ -84,11 +86,14 @@ class IndexController extends BaseController
             $rate[$standard->id]['name'] = $standard->name;
         }
 
-        // 计算全量进度
-        $allFolderCounts = Db::table('folder_check_files')->count();
+        // 计算全量进度（过滤 master_id）
+        $allFolderCounts = Db::table('folder_check_files')
+            ->where('master_id', $masterId)
+            ->count();
         $allAccessCounts = Db::table('folder_check_files as fcf')
             ->join('folders as f', 'f.id', '=', 'fcf.folder_id')
             ->where('f.master_id', $masterId)
+            ->where('fcf.master_id', $masterId)
             ->where('f.audit_status', 1)
             ->count();
 

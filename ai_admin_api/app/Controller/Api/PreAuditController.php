@@ -79,54 +79,74 @@ class PreAuditController extends BaseController
             $aiResult = json_decode($i->ai_result ?? '', true);
             $i->ai_result = '';
             if (is_array($aiResult)) {
-                $num = 1;
-                foreach ($aiResult as $value) {
-                    $i->ai_result .= "{$num}: {$value} <br/>";
-                    ++$num;
+                $html = '';
+                foreach ($aiResult as $index => $res) {
+                    if (is_array($res) && isset($res['project'])) {
+                        // 结构化展示：每个项目独立一行，带状态标签
+                        $statusText = $res['status'] ? '合格' : '不合格';
+                        $statusClass = $res['status'] ? 'color: #18a058; background: #e7f5ee;' : 'color: #d03050; background: #f9e7e9;';
+                        $html .= "<div style='margin-bottom: 8px; padding: 6px; border-radius: 4px; border: 1px solid #eee;'>";
+                        $html .= "<span style='padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-right: 8px; {$statusClass}'>{$statusText}</span>";
+                        $html .= "<span style='font-weight: bold; color: #333;'>【{$res['project']}】</span>";
+                        $html .= "<div style='margin-top: 4px; margin-left: 54px; color: #666; font-size: 13px;'>{$res['text']}</div>";
+                        $html .= "</div>";
+                    } else {
+                        // 兼容老数据（纯字符串数组）
+                        $num = $index + 1;
+                        $html .= "{$num}: {$res} <br/>";
+                    }
                 }
+                $i->ai_result = $html;
             }
             return $i;
         });
-        foreach ($lists as $list) {
-            $infos = json_decode($list->info, true);
-        }
         $currentCheckIds = [];
+        $intData = [];
+        $infos = [];
+        
+        // 获取最新的提交信息内容
+        $latest = $lists->last();
+        if ($latest) {
+            $infos = json_decode($latest->info, true) ?: [];
+        }
+
         foreach ($infos as $info) {
             if (isset($info['id'])) {
-                $currentCheckIds[] = $info['id'];
+                $currentCheckIds[] = (int)$info['id'];
             }
-            $data = $info['data'];
+            $data = $info['data'] ?? [];
             $infoIntData = array_filter($data, function ($v) {
-                return is_int($v);
+                return is_int($v) || (is_string($v) && is_numeric($v));
             });
             $intData = array_merge($intData, $infoIntData);
         }
         $all_files = Db::table('files as f')
             ->leftJoin('folders as fo', 'fo.id', '=', 'f.folder_id')
+            ->leftJoin('folder_check_files as fcf', 'fcf.folder_id', '=', 'f.folder_id')
             ->whereIn('f.id', $intData)
-            ->select(['f.*', 'fo.name as folder_name'])
+            ->select(['f.*', 'fcf.check_name as project_name', 'fo.name as folder_name'])
             ->get();
 
-
-        // 获取该预审的最新一条 pre_audit_result 明细（按检查项聚合，仅展示当前提交包含的检查项）
+        // 获取该预审的最新一条 pre_audit_result 明细
         $masterId = Db::table('pre_audits')->where('id', $id)->value('master_id');
-        $auditResults = Db::table('pre_audit_results')
-            ->where('master_id', $masterId)
-            ->whereIn('check_id', $currentCheckIds)
-            ->select(['folder_name', 'failed_str', 'is_access', 'check_id'])
+        $auditResults = Db::table('pre_audit_results as par')
+            ->leftJoin('folder_check_files as fcf', 'fcf.id', '=', 'par.check_id')
+            ->where('par.master_id', $masterId)
+            ->whereIn('par.check_id', $currentCheckIds)
+            ->select(['par.folder_name', 'par.result_str', 'par.is_access', 'par.check_id', 'fcf.check_type', 'fcf.check_name as project_name'])
             ->get()
-            ->groupBy('folder_name')
+            ->groupBy('project_name') // 改为按项目名称聚合
             ->map(function ($group) {
-                // 取该文件夹下第一条记录的合格状态（同一文件夹下所有记录 is_access 相同）
                 $first = $group->first();
                 $details = [];
-                if ($first->failed_str) {
-                    $details = explode('; ', $first->failed_str);
+                if ($first->result_str) {
+                    $details = explode('; ', $first->result_str);
                 }
                 return [
-                    'folder_name' => $first->folder_name,
+                    'folder_name' => $first->project_name ?: $first->folder_name,
                     'is_access'   => $first->is_access,
                     'details'     => $details,
+                    'check_type'  => $first->check_type ?? 0,
                 ];
             })->values();
 

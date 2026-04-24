@@ -27,6 +27,10 @@
     projectId: {
       type: [Number, String],
       default: 0
+    },
+    standardId: {
+      type: Number,
+      default: 0
     }
   });
 
@@ -48,7 +52,7 @@
     if (props.fileType === 'folder') {
       apiMoveFolder(
         {
-          folder_id: targetFolder.id,
+          folder_id: String(targetFolder.id).replace('f', ''),
         },
         props.id
       )
@@ -63,7 +67,7 @@
     } else {
       apiMoveFile(
         {
-          folder_id: targetFolder.id,
+          folder_id: String(targetFolder.id).replace('f', ''),
         },
         props.id
       )
@@ -78,25 +82,21 @@
     }
   };
 
-  /**
-   * 递归查找并提取特定项目的子树
-   */
-  const findProjectSubtree = (data: any[], projectId: number | string) => {
-    // 将 'f123' 形式转换回数字
+  const findProjectNode = (data: any[], projectId: number | string) => {
     const targetId = typeof projectId === 'string' && projectId.startsWith('f') 
       ? projectId 
       : `f${projectId}`;
 
     for (const item of data) {
       if (item.id === targetId) {
-        return [item];
+        return item;
       }
       if (item.children) {
-        const found = findProjectSubtree(item.children, projectId);
-        if (found.length > 0) return found;
+        const found = findProjectNode(item.children, projectId);
+        if (found) return found;
       }
     }
-    return [];
+    return null;
   };
 
   const createReturn = (item: any) => {
@@ -115,20 +115,20 @@
       node.children = createData(item.children);
     }
 
-    // 审核项目本身禁止作为移动目标（根据需求只允许移动到项目内的子目录）
-    // 但用户也可能想直接移动到项目根目录下，所以我们允许移动
-    node.suffix = () => [
-      h(
-        NButton,
-        {
-          text: true,
-          type: 'warning',
-          style: 'font-size: 12px',
-          onClick: () => move(item),
-        },
-        { default: () => '移动到此处' }
-      ),
-    ];
+    if (item.type === 'folder') {
+      node.suffix = () => [
+        h(
+          NButton,
+          {
+            text: true,
+            type: 'warning',
+            style: 'font-size: 12px',
+            onClick: () => move(item),
+          },
+          { default: () => '移动到此处' }
+        ),
+      ];
+    }
 
     return node;
   };
@@ -143,14 +143,25 @@
 
   const openModal = () => {
     params.showMoveModal = true;
-    apiGetFolderLists().then((res) => {
-      // 限制跨项目移动：如果指定了 projectId，则只展示该项目的子树
+    apiGetFolderLists({ standard_id: props.standardId }).then((res: any) => {
+      const treeData = res?.tree || [];
+      
       if (props.projectId) {
-         const subtree = findProjectSubtree(res, props.projectId);
-         params.data = createData(subtree);
+         // 查找项目文件夹节点
+         const projectNode = findProjectNode(treeData, props.projectId);
+         if (projectNode) {
+            // 构造一个包含“项目根目录”和其子目录的新树
+            const rootNode = {
+               ...projectNode,
+               name: '项目根目录 (点此移动到根目录)',
+               children: projectNode.children || []
+            };
+            params.data = createData([rootNode]);
+         } else {
+            params.data = [];
+         }
       } else {
-         // 回退方案：展示完整列表（但不建议，应始终传递 projectId）
-         params.data = createData(res);
+         params.data = createData(treeData);
       }
     });
   };
