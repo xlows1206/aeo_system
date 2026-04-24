@@ -120,12 +120,31 @@ class PreAuditController extends BaseController
             });
             $intData = array_merge($intData, $infoIntData);
         }
+        $checkMap = Db::table('folder_check_files')
+            ->whereIn('id', $currentCheckIds)
+            ->pluck('check_name', 'id');
+
+        $fileToProjectName = [];
+        foreach ($infos as $info) {
+            $checkId = $info['id'] ?? 0;
+            $projectName = $checkMap[$checkId] ?? '';
+            $fileIds = $info['data'] ?? [];
+            foreach ($fileIds as $fid) {
+                if ($projectName) {
+                    $fileToProjectName[(int)$fid] = $projectName;
+                }
+            }
+        }
+
         $all_files = Db::table('files as f')
             ->leftJoin('folders as fo', 'fo.id', '=', 'f.folder_id')
-            ->leftJoin('folder_check_files as fcf', 'fcf.folder_id', '=', 'f.folder_id')
             ->whereIn('f.id', $intData)
-            ->select(['f.*', 'fcf.check_name as project_name', 'fo.name as folder_name'])
-            ->get();
+            ->select(['f.*', 'fo.name as folder_name'])
+            ->get()
+            ->map(function ($file) use ($fileToProjectName) {
+                $file->project_name = $fileToProjectName[$file->id] ?? '';
+                return $file;
+            });
 
         // 获取该预审的最新一条 pre_audit_result 明细
         $masterId = Db::table('pre_audits')->where('id', $id)->value('master_id');
@@ -135,7 +154,7 @@ class PreAuditController extends BaseController
             ->whereIn('par.check_id', $currentCheckIds)
             ->select(['par.folder_name', 'par.result_str', 'par.is_access', 'par.check_id', 'fcf.check_type', 'fcf.check_name as project_name'])
             ->get()
-            ->groupBy('project_name') // 改为按项目名称聚合
+            ->groupBy('project_name')
             ->map(function ($group) {
                 $first = $group->first();
                 $details = [];
