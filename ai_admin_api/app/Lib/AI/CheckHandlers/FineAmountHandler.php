@@ -14,26 +14,36 @@ class FineAmountHandler extends AbstractHandler
     public function performAudit(array $data, array $context): ?string
     {
         $companyName = $context['company_name'] ?? '';
-        
         $totalAmount = 0;
-        $errors = [];
+        $foundCounts = 0;
 
         foreach ($data as $item) {
-            if (($item['result'] ?? '') === 'error') {
-                $errors[] = "[ERROR] 资料解析失败: " . ($item['reason'] ?? '未知错误');
-                continue;
-            }
-
-            // 匹配公司名称
-            if (($item['company'] ?? '') === $companyName) {
-                $totalAmount += $this->normalizeNumber($item['amount'] ?? 0);
+            if (isset($item['amount'])) {
+                $amt = $this->normalizeNumber($item['amount']);
+                $totalAmount += $amt;
+                $foundCounts++;
             }
         }
 
-        if ($totalAmount > 50000) {
-            $errors[] = "行政被处罚金额累计超过 5 万元 (当前: {$totalAmount} 元)";
+        $statusText = $totalAmount <= 50000 ? "符合标准 (未超过 5 万元)" : "不符合标准 (已超过 5 万元限额)";
+        
+        return "识别到处罚记录数: {$foundCounts}, 处罚金额累计: {$totalAmount} 元。结论: {$statusText}";
+    }
+
+    public function isAccessible(array $data, array $context): bool
+    {
+        $totalAmount = 0;
+        foreach ($data as $item) {
+            if (isset($item['amount'])) {
+                $totalAmount += $this->normalizeNumber($item['amount']);
+            }
         }
 
-        return empty($errors) ? null : implode('; ', $errors);
+        return $totalAmount <= 50000;
+    }
+
+    public function getSuccessMessages(array $data, array $context): array
+    {
+        return ["经核查，企业近两年内行政处罚累计金额未超过 5 万元，符合海关合规审查要求。"];
     }
 }

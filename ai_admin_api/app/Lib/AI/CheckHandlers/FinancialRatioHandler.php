@@ -14,53 +14,81 @@ class FinancialRatioHandler extends AbstractHandler
     public function parseResult(array $rawResult): array
     {
         return [
-            'result' => $rawResult['result'] ?? 'success',
+            'result' => $rawResult['result'] ?? ($rawResult['status'] ?? 'success'),
             'reason' => $rawResult['reason'] ?? '',
             'year' => $rawResult['year'] ?? null,
             'liability' => $rawResult['liability'] ?? 0,
             'liability_equity' => $rawResult['liability_equity'] ?? 0,
+            'ratio' => $rawResult['ratio'] ?? null,
+            'status' => $rawResult['status'] ?? ($rawResult['result'] ?? null),
         ];
     }
 
     public function performAudit(array $data, array $context): ?string
     {
-        $durationYears = $context['duration_years'] ?? [];
-        $errors = [];
+        $yearlyResults = [];
+        foreach ($data as $item) {
+            if (!is_array($item)) continue;
+            
+            $year = $this->normalizeYear($item['year'] ?? '');
+            if (!$year) continue;
 
-        if (empty($durationYears)) {
-            return "未设置公司存续年份, 无法进行资产负债率检查.";
-        }
-
-        foreach ($durationYears as $year) {
-            $yearData = null;
-            foreach ($data as $item) {
-                if ($this->normalizeYear($item['year'] ?? '') === $this->normalizeYear($year)) {
-                    $yearData = $item;
-                    break;
-                }
-            }
-
-            if (!$yearData || ($yearData['result'] ?? '') === 'error') {
-                $reason = $yearData['reason'] ?? '未读取到有效财务信息';
-                $errors[] = "{$year}年度: [ERROR] {$reason}";
+            // 如果已经有成功的结论，不再覆盖（除非当前是错误）
+            if (isset($yearlyResults[$year]) && $yearlyResults[$year]['status'] !== 'error') {
                 continue;
             }
 
-            $liability = $this->normalizeNumber($yearData['liability'] ?? 0);
-            $liabilityEquity = $this->normalizeNumber($yearData['liability_equity'] ?? 0);
+            $liability = $this->normalizeNumber($item['liability'] ?? 0);
+            $liabilityEquity = $this->normalizeNumber($item['liability_equity'] ?? 0);
+            
+            // 优先用 AI 返回的比率，如果没有则计算
+            $ratio = 0;
+            if (isset($item['ratio']) && $item['ratio'] !== null) {
+                $ratio = $this->normalizeNumber($item['ratio']);
+            }
+            
+            if ($ratio == 0 && $liabilityEquity > 0) {
+                $ratio = floatval(bcdiv((string)$liability, (string)$liabilityEquity, 4));
+            }
 
-            if ($liabilityEquity > 0) {
-                $ratio = bcdiv((string)$liability, (string)$liabilityEquity, 4);
-                if (floatval($ratio) > 0.95) {
-                    $ratioPercent = round(floatval($ratio) * 100, 2) . '%';
-                    $errors[] = "{$year}年度: 资产负债率为 {$ratioPercent} (不符合 AEO ≤ 95% 标准)";
-                }
+            // 状态判定逻辑：如果有比率，以比率为准；没有比率则看 AI 结论
+            $status = 'error';
+            $aiStatus = strtolower((string)($item['status'] ?? ($item['result'] ?? '')));
+            
+            if ($ratio > 0) {
+                $status = ($ratio <= 0.95) ? 'pass' : 'fail';
+            } elseif ($aiStatus === 'pass' || $aiStatus === 'success') {
+                $status = 'pass';
+            } elseif ($aiStatus === 'fail' || $aiStatus === 'failed') {
+                $status = 'fail';
+            }
+
+            $yearlyResults[$year] = [
+                'status' => $status,
+                'ratio' => $ratio,
+                'reason' => $item['reason'] ?? '',
+            ];
+        }
+
+        if (empty($yearlyResults)) {
+            return "未能从该文件中读取到有效的财务比率信息。";
+        }
+
+        $findings = [];
+        foreach ($yearlyResults as $year => $res) {
+            $yearStr = (string)$year;
+            $ratioPercent = round($res['ratio'] * 100, 2) . "%";
+            
+            if ($res['status'] === 'pass') {
+                $findings[] = "{$yearStr}年度: 资产负债率为 {$ratioPercent} (符合标准)";
+            } elseif ($res['status'] === 'fail') {
+                $findings[] = "{$yearStr}年度: 资产负债率为 {$ratioPercent} (不符合 AEO ≤ 95% 标准)";
             } else {
-                $errors[] = "{$year}年度: [ERROR] 权益合计为0，数据无效";
+                $findings[] = "{$yearStr}年度: [数据异常] " . ($res['reason'] ?: '解析到的数据不完整');
             }
         }
 
-        return empty($errors) ? null : implode('; ', $errors);
+        return implode('; ', $findings);
     }
 
     public function getSuccessMessages(array $data, array $context): array
@@ -87,16 +115,12 @@ class FinancialRatioHandler extends AbstractHandler
     }
 
     /**
-     * 合格判定：至少有一个存续年份的负债率 ≤ 95% 且数据有效，即视为通过。
-     * 与 performAudit 的显示逻辑完全解耦。
-     *
-     * 依据 backend_memory.md §5 文件检测项目矩阵：
-     * "至少有一年负债率 liability / liability_equity <= 95%"
+     * 合格判定：只要有任意一年不高于 95% 就算通过。
+     * 只有当所有年份都高于 95% 或数据完全无效时才判定为不通过。
      */
     public function isAccessible(array $data, array $context): bool
     {
         $durationYears = $context['duration_years'] ?? [];
-
         if (empty($durationYears)) {
             return false;
         }
@@ -110,23 +134,22 @@ class FinancialRatioHandler extends AbstractHandler
                 }
             }
 
+            // 如果该年份数据无效或提取失败，跳过该年份的判定，看其他年份
             if (!$yearData || ($yearData['result'] ?? '') === 'error') {
-                return false; // 缺少任何一个存续年份的数据或提取失败，视为不通过
+                continue;
             }
 
             $liability = $this->normalizeNumber($yearData['liability'] ?? 0);
             $liabilityEquity = $this->normalizeNumber($yearData['liability_equity'] ?? 0);
 
-            if ($liabilityEquity <= 0) {
-                return false; // 数据异常
-            }
-
-            $ratio = floatval(bcdiv((string)$liability, (string)$liabilityEquity, 4));
-            if ($ratio > 0.95) {
-                return false; // 只要有一年不合格，整体就不通过
+            if ($liabilityEquity > 0) {
+                $ratio = floatval(bcdiv((string)$liability, (string)$liabilityEquity, 4));
+                if ($ratio <= 0.95) {
+                    return true; // 只要有一年合格，整体就通过
+                }
             }
         }
 
-        return true; // 所有年份都合格
+        return false; // 所有年份都不合格或均无有效数据
     }
 }

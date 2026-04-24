@@ -144,6 +144,7 @@
               </div>
               <n-button
                 @click="openSubmitFile"
+                style="color: #fff;"
                 class="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white py-3 text-base font-medium  rounded-lg">
                 <n-icon class="mr-2 h-5 w-5" size="20" color="#fff">
                   <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -157,7 +158,7 @@
                     </g>
                   </svg>
                 </n-icon>
-                提交AEO认证
+                查看AEO认证标准说明
               </n-button>
             </div>
           </div>
@@ -210,9 +211,9 @@
                 </div>
               </div>
             </div>
-            <div class="mt-8 flex gap-3">
-
+            <div class="mt-8">
               <n-button
+                style="color: #fff;"
                 class="w-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg font-medium" @click="jumpUpload">
                 <n-icon size="18" color="#fff">
                   <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -225,15 +226,7 @@
                     </g>
                   </svg>
                 </n-icon>
-
                 去处理/上传
-              </n-button>
-              <n-button
-                class="border-amber-300 text-amber-700 hover:bg-amber-50 bg-transparent px-3 rounded-lg font-medium"
-                style="border: 1px solid #F9EBA9;width: 150px;padding-top: 10px;padding-bottom: 10px;"
-                @click="showInfo"
-              >
-                查看详情
               </n-button>
             </div>
           </div>

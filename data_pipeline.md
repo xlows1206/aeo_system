@@ -42,10 +42,25 @@
     - `3`: 上传即为通过 (Simple Pass)
 - **输出**: 结构化 JSON 结论 (`result_str`)。
 - **匹配与映射优化 (V4.1)**:
-    - **逻辑**: `CheckHandlerFactory` 增加“两步清洗法”，先剥离 `Category 、 ` 路径，再剥离 `序号-` 前缀，解决带装饰名称无法命中 AI 处理器的问题。
-    - **错误反馈机制**: AI Prompt 强制输出 `result: error` 状态。后端识别此状态并添加 `[ERROR]` 前缀，以明确区分“解析失败”与“合规不通过”。
+    - **逻辑**: `CheckHandlerFactory` 增加"两步清洗法"，先剥离 `Category 、 ` 路径，再剥离 `序号-` 前缀，解决带装饰名称无法命中 AI 处理器的问题。
+    - **资产负债率逻辑修正 (2026-04-25)**: 遵循 AEO 最新标准，资产负债率判定由"全部年份通过"调整为"**只要有任意一年不高于 95% 就算通过**"。
+    - **错误反馈机制**: AI Prompt 强制输出 `result: error` 状态。后端识别此状态并添加 `[ERROR]` 前缀，以明确区分"解析失败"与"合规不通过"。
+- **全模块分层反馈 (V4.2 - 2026-04-25)**:
+    - **逻辑重构**：所有 AI Handler (AuditReport, LegalCompliance, PunishmentRatio, FineAmount 等) 均已升级为"全量透明输出"模式。
+    - **二元架构**：`performAudit` 提供每个文件的详细结论（包括合格项），`isAccessible` 负责整体合规逻辑判定。
+    - **UI 展示**：前端和历史记录实现了"总结果 + 文件结果"的双层嵌套显示。
 
 ## 7. 预审文件采集流
 - **输入**: `api/v1/file/lists` 返回的树形 JSON。
 - **处理**: `Tree.vue` 递归函数 `getAllFiles` 遍历子目录。
 - **输出**: 平展化的文件列表，带路径前缀（如 `文件夹 / 文件.pdf`）。
+
+## 8. 审核详情展示流 (2026-04-25 修复)
+- **输入**: `pre_audit_id`
+- **处理**: `PreAuditController@log`
+    - 解析提交 JSON 中的文件 ID 列表。
+    - 通过 `folder_closure + folder_check_files` JOIN 关联文件到审核项目（与 `GetAiResult.php` 一致）。
+    - 返回 `all_files`（含 `check_id`, `project_name`）和 `audit_results`（按 `check_id` 分组）。
+- **输出**: 前端 `Info.vue` 按 `check_id` 分组文件，显示 `project_name`（审核项目名称）。
+- **修复记录**: `$info['id']` 实际是 `standard_id` 而非 `check_id`，旧逻辑用它查 `folder_check_files` 导致 `project_name` 为空，前端回退显示物理文件夹名（如"测试通过"）。
+- **状态**: 通畅。

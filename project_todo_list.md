@@ -23,10 +23,12 @@
 - [x] **审核流水线标准化**: 统一 check_type 为 1(AI), 2(关键词), 3(直接通过) (2026-04-25)
 - [x] **修复 AI 审核卡死问题**: 引入 Throwable 捕获与 JSON 类型校验，防止任务静默崩溃 (2026-04-25)
 - [x] **AI 映射与结论精准化**: 解决了带装饰名（序号/路径）的项目无法匹配 Handler 的问题，并引入了 `[ERROR]` 前缀区分解析失败 (2026-04-25)
+- [x] **全模块分层反馈**: 实现了“总结果 + 文件结果”两层显示的全球化普及 (2026-04-25)
 
 ### 待办任务 (Next Steps)
 - [x] **反向同步机制**: 实现从云端 DB 反向同步至本地 CSV 的自动化流程 (2026-04-25)
+- [x] **审核详情项目名称修复**: 修复 `PreAuditController@log` 中 `$info['id']` 语义错位导致审核项目显示为物理文件夹名的问题，改用 `folder_closure JOIN` (2026-04-25)
 - [ ] 针对更多 AI 审核项完善示例图片库。
 
 ---
-*Updated by Antigravity - 2026-04-25 (Cloud-to-Local Reverse Sync Implementation)*
+*Updated by Antigravity - 2026-04-25 (Audit Detail Project Name Resolution Fix)*

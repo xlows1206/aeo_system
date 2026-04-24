@@ -13,62 +13,67 @@ class AuditReportHandler extends AbstractHandler
 
     public function performAudit(array $data, array $context): ?string
     {
-        $durationYears = $context['duration_years'] ?? [];
-        if (empty($durationYears)) {
-            return "未设置公司存续年份, 无法进行审计报告检查.";
-        }
-
-        // 结果聚合：按年份存储最新的状态和原因
+        // 结果聚合：仅针对当前输入数据中存在的年份生成结论
         $yearlyResults = [];
-        foreach ($data as $pageResult) {
-            if (!is_array($pageResult)) continue;
-            foreach ($pageResult as $item) {
-                $year = $this->normalizeYear($item['year'] ?? '');
-                if (!$year) continue;
-                
-                // 如果该年份还没存，或者当前存的是 error，则尝试用 pass/fail 覆盖（优先保留有意义的审核结果）
-                if (!isset($yearlyResults[$year]) || $yearlyResults[$year]['status'] === 'error') {
-                    $yearlyResults[$year] = [
-                        'status' => $item['status'] ?? 'error',
-                        'review' => $item['review'] ?? '未知',
-                        'reason' => $item['reason'] ?? '',
-                    ];
-                }
+        foreach ($data as $item) {
+            if (!is_array($item)) continue;
+            
+            $year = $this->normalizeYear($item['year'] ?? '');
+            if (!$year) continue;
+            
+            if (!isset($yearlyResults[$year]) || $yearlyResults[$year]['status'] === 'error') {
+                $rawStatus = strtolower((string)($item['status'] ?? ($item['result'] ?? 'error')));
+                $status = 'error';
+                if ($rawStatus === 'pass' || $rawStatus === 'success') $status = 'pass';
+                if ($rawStatus === 'fail' || $rawStatus === 'failed') $status = 'fail';
+
+                $yearlyResults[$year] = [
+                    'status' => $status,
+                    'review' => $item['review'] ?? '未知',
+                    'reason' => $item['reason'] ?? '',
+                ];
             }
         }
 
-        $errors = [];
-        foreach ($durationYears as $year) {
+        if (empty($yearlyResults)) {
+            return "未能从该文件中读取到有效的审计报告信息。";
+        }
+
+        $findings = [];
+        foreach ($yearlyResults as $year => $res) {
             $yearStr = (string)$year;
-            if (!isset($yearlyResults[$yearStr])) {
-                $errors[] = "〔未能读取有效信息〕{$yearStr}年度: 资料中未找到该年度相关的审计报告";
-                continue;
-            }
+            $statusText = $res['status'] === 'pass' ? '符合标准' : ($res['status'] === 'fail' ? '不符合标准' : '解析失败');
+            $findings[] = "{$yearStr}年度: {$statusText} (审计意见: {$res['review']}) " . ($res['reason'] ? "原因: {$res['reason']}" : "");
+        }
 
-            $res = $yearlyResults[$yearStr];
-            if ($res['status'] === 'fail') {
-                $errors[] = "〔审计不通过〕{$yearStr}年度: 审计意见为'{$res['review']}'，原因: {$res['reason']}";
-            } elseif ($res['status'] === 'error') {
-                $errors[] = "〔未能读取有效信息〕{$yearStr}年度: {$res['reason']}";
+        return implode('; ', $findings);
+    }
+
+    public function isAccessible(array $data, array $context): bool
+    {
+        $durationYears = $context['duration_years'] ?? [];
+        if (empty($durationYears)) return false;
+
+        $yearlyResults = [];
+        foreach ($data as $item) {
+            if (!is_array($item)) continue;
+            $year = $this->normalizeYear($item['year'] ?? '');
+            if ($year) {
+                $yearlyResults[$year] = $item['status'] ?? ($item['result'] ?? 'error');
             }
         }
 
-        return empty($errors) ? null : implode('; ', $errors);
+        foreach ($durationYears as $year) {
+            if (($yearlyResults[(string)$year] ?? '') !== 'pass') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function getSuccessMessages(array $data, array $context): array
     {
-        $success = [];
-        // 尝试从数据中提取成功的年份信息
-        foreach ($data as $pageResult) {
-            if (!is_array($pageResult)) continue;
-            foreach ($pageResult as $item) {
-                if (($item['status'] ?? '') === 'pass') {
-                    $year = $this->normalizeYear($item['year'] ?? '');
-                    if ($year) {
-                        $success[] = "{$year}年度: 审计意见为'{$item['review']}' (符合要求)";
-                    }
-                }
-            }
-        }
-        return array_unique($success);
+        return ["存续期内所有年度审计报告均符合“无保留意见”标准。"];
     }
 }

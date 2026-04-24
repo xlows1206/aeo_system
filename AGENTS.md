@@ -484,4 +484,45 @@ WHERE fcf.standard_id = <目标 standard_id> AND f.id IS NULL;
 
 ---
 
-*Updated by Antigravity - 2026-04-25 (Cloud-to-Local Reverse Sync Workflow)*
+## 13. 审核详情项目名称解析修复 (2026-04-25)
+
+### 13.1 问题描述
+审核详情抽屉（`Info.vue`）中，审核项目列表显示的名称为用户自定义的物理文件夹名（如"测试通过"），而非对应的审核项目名称（如"5-14-资产负债率情况"）。
+
+### 13.2 根本原因
+`PreAuditController@log` 的文件-项目映射逻辑存在**数据源错位**：
+- **提交数据结构**：`$info['id']` 实际存储的是 `standard_id`（如 6=单项标准），由 `Create.vue → CommonSubmit.vue` 中 `currentPre.id` 传入。
+- **错误查询**：后端用 `$info['id']`（standard_id）去查 `folder_check_files` 表的 `check_name`，自然找不到匹配记录，导致 `project_name` 永远为空字符串。
+- **前端回退**：前端 `groupedProjects` 在 `project_name` 为空时回退到 `folder_name`（来自 `folders.name`），即用户自定义的子文件夹名。
+
+### 13.3 修复方案
+**后端 (`PreAuditController@log`)**：
+- 废弃基于 `$info['id']` 的 `$checkMap` 映射方式。
+- 改用 `folder_closure + folder_check_files` JOIN（与 `GetAiResult.php` 完全一致），通过闭包表从文件→文件夹→审核项目正确关联。
+- `audit_results` 改为按 `check_id`（而非 `project_name`）分组，并返回 `check_id` 和 `result_str` 字段。
+
+**前端 (`Info.vue`)**：
+- 按 `check_id` 分组文件，显示 `project_name`（来自 `folder_check_files.check_name`）。
+- 审核结果按 `check_id` 匹配（而非模糊名称比对）。
+- 样式对齐 `Tree.vue`：文件夹图标 + 卡片展开/收起 + 渐变高亮。
+- 术语更正：`审核记录 (历史)` → `审核结果`。
+
+### 13.4 数据流对照
+
+| 阶段 | 旧逻辑 | 新逻辑 |
+|---|---|---|
+| 文件→项目映射 | `$info['id']`（实为 standard_id）→ `folder_check_files` | `folder_closure JOIN` → `folder_check_files` |
+| 前端分组键 | `file.folder_id`（物理文件夹 ID） | `file.check_id`（审核项目 ID） |
+| 显示名称 | `file.folder_name`（物理文件夹名） | `file.project_name`（`check_name`） |
+| 审核结果匹配 | 按 `project_name` 字符串比对 | 按 `check_id` 精确匹配 |
+
+### ⚡ 教训 8：提交数据中的 `id` 字段语义必须明确区分
+
+**描述**：`Create.vue` 提交的 `info` 结构中，`id` 字段实际是 `standard_id`（准则 ID），而非 `folder_check_files.id`（审核项 ID）。在 `GetAiResult.php` 中不使用此字段（通过 `folder_closure` JOIN 正确关联），但 `PreAuditController@log` 错误地依赖它查 `folder_check_files`，导致映射失败。
+**对策**：
+- 读取提交 JSON 时，必须明确每个字段的语义。不要假设 `id` 就是某个表的主键。
+- 文件到审核项目的关联，统一使用 `folder_closure JOIN` 方式，保证与 `GetAiResult.php` 一致。
+
+---
+
+*Updated by Antigravity - 2026-04-25 (Audit Detail Project Name Resolution Fix)*

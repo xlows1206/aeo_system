@@ -82,25 +82,42 @@ class PreAuditController extends BaseController
                 $html = '';
                 foreach ($aiResult as $index => $res) {
                     if (is_array($res) && isset($res['project'])) {
-                        // 结构化展示：每个项目独立一行，带状态标签
                         $statusText = $res['status'] ? '合格' : '不合格';
                         $statusClass = $res['status'] ? 'color: #18a058; background: #e7f5ee;' : 'color: #d03050; background: #f9e7e9;';
-                        $html .= "<div style='margin-bottom: 8px; padding: 6px; border-radius: 4px; border: 1px solid #eee;'>";
-                        $html .= "<span style='padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-right: 8px; {$statusClass}'>{$statusText}</span>";
-                        $html .= "<span style='font-weight: bold; color: #333;'>【{$res['project']}】</span>";
-                        $html .= "<div style='margin-top: 4px; margin-left: 54px; color: #666; font-size: 13px;'>{$res['text']}</div>";
+                        
+                        $html .= "<div style='margin-bottom: 12px; padding: 10px; border-radius: 6px; border: 1px solid #edf2f7; background: #fff;'>";
+                        $html .= "<div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;'>";
+                        $html .= "<span style='font-weight: bold; color: #2d3748; font-size: 14px;'>【{$res['project']}】</span>";
+                        $html .= "<span style='padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; {$statusClass}'>{$statusText}</span>";
+                        $html .= "</div>";
+
+                        // 如果有文件明细
+                        if (!empty($res['files'])) {
+                            foreach ($res['files'] as $file) {
+                                $fStatusColor = $file['status'] ? '#18a058' : '#d03050';
+                                $fIcon = $file['status'] ? '✓' : '✗';
+                                $html .= "<div style='margin-left: 8px; padding: 4px 0; border-top: 1px dashed #eee; display: flex; align-items: flex-start;'>";
+                                $html .= "<span style='color: {$fStatusColor}; margin-right: 6px; font-weight: bold;'>{$fIcon}</span>";
+                                $html .= "<div style='flex: 1;'>";
+                                $html .= "<div style='font-size: 12px; color: #4a5568; font-weight: 500;'>{$file['name']}</div>";
+                                $html .= "<div style='font-size: 12px; color: #718096; margin-top: 2px;'>{$file['text']}</div>";
+                                $html .= "</div>";
+                                $html .= "</div>";
+                            }
+                        } else {
+                            $html .= "<div style='margin-top: 4px; margin-left: 8px; color: #666; font-size: 13px;'>{$res['text']}</div>";
+                        }
+                        
                         $html .= "</div>";
                     } else {
-                        // 兼容老数据（纯字符串数组）
                         $num = $index + 1;
-                        $html .= "{$num}: {$res} <br/>";
+                        $html .= "{$num}: " . (is_string($res) ? $res : json_encode($res)) . " <br/>";
                     }
                 }
                 $i->ai_result = $html;
             }
             return $i;
         });
-        $currentCheckIds = [];
         $intData = [];
         $infos = [];
         
@@ -111,40 +128,32 @@ class PreAuditController extends BaseController
         }
 
         foreach ($infos as $info) {
-            if (isset($info['id'])) {
-                $currentCheckIds[] = (int)$info['id'];
-            }
             $data = $info['data'] ?? [];
             $infoIntData = array_filter($data, function ($v) {
                 return is_int($v) || (is_string($v) && is_numeric($v));
             });
             $intData = array_merge($intData, $infoIntData);
         }
-        $checkMap = Db::table('folder_check_files')
-            ->whereIn('id', $currentCheckIds)
-            ->pluck('check_name', 'id');
 
-        $fileToProjectName = [];
-        foreach ($infos as $info) {
-            $checkId = $info['id'] ?? 0;
-            $projectName = $checkMap[$checkId] ?? '';
-            $fileIds = $info['data'] ?? [];
-            foreach ($fileIds as $fid) {
-                if ($projectName) {
-                    $fileToProjectName[(int)$fid] = $projectName;
-                }
-            }
-        }
-
+        // 通过 folder_closure + folder_check_files 关联文件到审核项目
+        // 与 GetAiResult.php 保持一致的查询逻辑
         $all_files = Db::table('files as f')
-            ->leftJoin('folders as fo', 'fo.id', '=', 'f.folder_id')
+            ->join('folders as fo', 'f.folder_id', '=', 'fo.id')
+            ->join('folder_closure as fc', 'fo.id', '=', 'fc.descendant')
+            ->join('folder_check_files as fcf', 'fc.ancestor', '=', 'fcf.folder_id')
             ->whereIn('f.id', $intData)
-            ->select(['f.*', 'fo.name as folder_name'])
+            ->select([
+                'f.*',
+                'fo.name as folder_name',
+                'fcf.id as check_id',
+                'fcf.check_name as project_name',
+            ])
+            ->orderBy('fc.distance', 'asc')
             ->get()
-            ->map(function ($file) use ($fileToProjectName) {
-                $file->project_name = $fileToProjectName[$file->id] ?? '';
-                return $file;
-            });
+            ->unique('id');
+
+        // 收集实际涉及的 check_id 列表
+        $currentCheckIds = $all_files->pluck('check_id')->unique()->filter()->values()->toArray();
 
         // 获取该预审的最新一条 pre_audit_result 明细
         $masterId = Db::table('pre_audits')->where('id', $id)->value('master_id');
@@ -154,7 +163,7 @@ class PreAuditController extends BaseController
             ->whereIn('par.check_id', $currentCheckIds)
             ->select(['par.folder_name', 'par.result_str', 'par.is_access', 'par.check_id', 'fcf.check_type', 'fcf.check_name as project_name'])
             ->get()
-            ->groupBy('project_name')
+            ->groupBy('check_id')
             ->map(function ($group) {
                 $first = $group->first();
                 $details = [];
@@ -162,7 +171,9 @@ class PreAuditController extends BaseController
                     $details = explode('; ', $first->result_str);
                 }
                 return [
+                    'check_id'    => $first->check_id,
                     'folder_name' => $first->project_name ?: $first->folder_name,
+                    'result_str'  => $first->result_str ?? '',
                     'is_access'   => $first->is_access,
                     'details'     => $details,
                     'check_type'  => $first->check_type ?? 0,

@@ -17,15 +17,15 @@ class KeywordMatchHandler extends AbstractHandler
         
         $passed = false;
         foreach ($data as $item) {
-            $res = $item['result'] ?? null;
-            if ($res === true || $res === 'true') {
+            $status = strtolower((string)($item['status'] ?? ($item['result'] ?? '')));
+            if ($status === 'pass' || $status === 'true' || $item['result'] === true) {
                 $passed = true;
                 break;
             }
         }
 
         if (!$passed) {
-            return "{$checkName}未通过, 未读取到有效关键字信息";
+            return "{$checkName}审核未通过：未在上传文档中匹配到关键条款。";
         }
         return null;
     }

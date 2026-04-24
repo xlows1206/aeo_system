@@ -99,6 +99,13 @@ class GetAiResult extends Job
                     $duration_years[] = (string) $y;
                 }
             }
+            $context = [
+                'duration_years' => $duration_years,
+                'company_name' => $companyInfo?->name ?? '',
+                'company_person_names' => $companyPersonName,
+                'not_self_total' => (int)($companyInfo?->not_self_total ?? 0),
+            ];
+
             $intData = [];
             foreach ($infos as $info) {
                 $data = $info['data'];
@@ -128,6 +135,7 @@ class GetAiResult extends Job
             // 按 file_id 去重，确保每个文件只对应其最近的审计项祖先
             $all_files = $all_files->unique('file_id');
             $all_files_group = $all_files->groupBy('f.folder_id');
+            $checkGroups = $all_files->groupBy('check_id');
 
             // 预处理：只对需要 AI 参与的项目加入并行队列
             foreach ($all_files_group as $files) {
@@ -147,69 +155,90 @@ class GetAiResult extends Job
             $parallel->wait();
 
             $results = $this->redisService->make()->hGetAll('ai_result:' . $this->prefixId);
-            $res = [];
+            $fileRes = []; // 按文件 ID 聚合的 AI 原始数据
             foreach ($results as $key => $result) {
                 $key_arr = explode('_', $key);
                 $result = json_decode($result, true);
-                if (! is_array($result)) {
-                    Log::get()->warning("GetAiResult: invalid json for check_id {$key}", ['raw' => $result]);
-                    continue;
-                }
+                if (! is_array($result)) continue;
+                
                 $check_id = $key_arr[0];
-                $file = $all_files->where('check_id', $check_id)->first();
-                if ($file) {
-                    $handler = CheckHandlerFactory::make($file->check_name);
-                    $res[$file->check_name][] = $handler->parseResult($result);
-                }
-            }
-            $resInfo = [];
-            $accessInfo = []; // 独立存放合格判定结果
-            $context = [
-                'company_name' => $companyInfo->company_name ?? '',
-                'company_person_names' => $companyPersonName,
-                'duration_years' => $duration_years,
-                'not_self_total' => $companyInfo->not_self_total ?? 0,
-            ];
-
-            foreach ($res as $check_name => $aggregatedData) {
-                $handler = CheckHandlerFactory::make($check_name);
-                $mergedContext = array_merge($context, ['check_name' => $check_name]);
-                // performAudit 负责"显示内容"，始终存储
-                $auditResult = $handler->performAudit($aggregatedData, $mergedContext);
-                if ($auditResult) {
-                    $resInfo[$check_name] = explode('; ', $auditResult);
-                }
-                // isAccessible 负责"是否合格"，与显示内容完全解耦
-                $accessInfo[$check_name] = $handler->isAccessible($aggregatedData, $mergedContext);
+                $file_id = (int)$key_arr[1];
+                $fileRes[$file_id][] = $result;
             }
 
-            $aiResult = [];
-            // 按照审核项目 (Check ID) 进行聚合保存，避免重复记录
-            $checkGroups = $all_files->groupBy('check_id');
+            // 1. 预处理：按项目 (check_id) 汇总所有文件数据
+            $projectDataAggregated = []; // check_id => [all_parsed_data]
+            foreach ($checkGroups as $cId => $filesInCheck) {
+                $handler = CheckHandlerFactory::make($filesInCheck->first()->check_name);
+                foreach ($filesInCheck as $file) {
+                    $fileData = $fileRes[$file->file_id] ?? [];
+                    $parsed = array_map([$handler, 'parseResult'], $fileData);
+                    foreach ($parsed as $p) {
+                        $projectDataAggregated[$cId][] = $p;
+                    }
+                }
+            }
+
+            // 2. 生成结果：既有项目总分，也有文件明细
+            $projectFileFindings = []; // check_id => [ file_id => [details] ]
+            $projectAccess = []; // check_id => bool
 
             foreach ($checkGroups as $cId => $filesInCheck) {
                 $firstFile = $filesInCheck->first();
-                $checkName = $firstFile->check_name;
-                $displayLines = $resInfo[$checkName] ?? [];
-                $passed = $accessInfo[$checkName] ?? true;
+                $handler = CheckHandlerFactory::make($firstFile->check_name);
+                $context['check_name'] = $firstFile->check_name;
 
-                // 如果是 AI 类型但通过了，且没有错误信息，尝试获取成功的具体结论
-                if (in_array($firstFile->check_type, [1, 2]) && $passed && empty($displayLines)) {
-                    $handler = CheckHandlerFactory::make($checkName);
-                    $displayLines = $handler->getSuccessMessages($res[$checkName] ?? [], $context);
-                }
+                // 项目整体状态：基于所有文件的汇总数据
+                $allData = $projectDataAggregated[$cId] ?? [];
+                $projectAccess[$cId] = $handler->isAccessible($allData, $context);
 
-                // 构造入库数据
-                $result_str = "";
-                if (!$passed) {
-                    $result_str = (string)join("; ", $displayLines);
-                } else {
-                    if (in_array($firstFile->check_type, [1, 2])) {
-                        $result_str = empty($displayLines) ? "未能从文档中提取到有效的审核结论，请检查文件内容。" : (string)join("; ", $displayLines);
+                // 文件明细：仅基于该文件的数据
+                foreach ($filesInCheck as $file) {
+                    if ($file->check_type == 3) {
+                        $projectFileFindings[$cId][$file->file_id] = [
+                            'name' => $file->name,
+                            'text' => '上传即合格',
+                            'status' => 1
+                        ];
                     } else {
-                        $result_str = "上传的文档文件符合审核项目标准。";
+                        $fileData = $fileRes[$file->file_id] ?? [];
+                        $parsed = array_map([$handler, 'parseResult'], $fileData);
+                        
+                        $findingText = $handler->performAudit($parsed, $context);
+                        $isPass = $handler->isAccessible($parsed, $context);
+
+                        // 状态修正：如果是空数据且项目整体需要多项配合，则单个文件可能不通过
+                        if ($isPass && empty($findingText)) {
+                            $successMsgs = $handler->getSuccessMessages($parsed, $context);
+                            $findingText = !empty($successMsgs) ? join("; ", $successMsgs) : "文档内容符合标准。";
+                        } elseif (empty($findingText)) {
+                            $findingText = "未能识别到有效信息。";
+                        }
+
+                        $projectFileFindings[$cId][$file->file_id] = [
+                            'name' => $file->name,
+                            'text' => $findingText,
+                            'status' => $isPass ? 1 : 0
+                        ];
                     }
                 }
+            }
+
+            $ai_pre_res = [];
+            $aiResult = [];
+
+            foreach ($checkGroups as $cId => $filesInCheck) {
+                $firstFile = $filesInCheck->first();
+                $projectName = $this->extractProjectName($firstFile->check_name);
+                $fileFindings = $projectFileFindings[$cId] ?? [];
+                $passed = $projectAccess[$cId] ?? false;
+
+                // 汇总该项目下所有文件的结论（不重复拼接）
+                $allTexts = [];
+                foreach ($fileFindings as $fid => $fr) {
+                    $allTexts[] = "【{$fr['name']}】: {$fr['text']}";
+                }
+                $result_str = join("; ", $allTexts);
 
                 $ai_pre_res[] = [
                     "folder_id" => (int)$firstFile->folder_id,
@@ -221,32 +250,13 @@ class GetAiResult extends Job
                     "is_access" => $passed ? 1 : 0
                 ];
 
-                // 统一将所有审核结论（通过或失败）存入最终 JSON 用于提交历史展示
-                // 使用 check_name 作为项目展示名，确保即便在子文件夹下也能正确归类
-                $projectName = $this->extractProjectName($checkName);
-                if (!empty($displayLines)) {
-                    foreach ($displayLines as $line) {
-                        $uniqueKey = $projectName . '_' . $line;
-                        $aiResult[$uniqueKey] = [
-                            'project' => $projectName,
-                            'status' => $passed ? 1 : 0,
-                            'text' => $line
-                        ];
-                    }
-                } else {
-                    $uniqueKey = $projectName . ($passed ? '_SUCCESS' : '_FAILED');
-                    if (!isset($aiResult[$uniqueKey])) {
-                        $aiResult[$uniqueKey] = [
-                            'project' => $projectName,
-                            'status' => $passed ? 1 : 0,
-                            'text' => in_array($firstFile->check_type, [1, 2]) ? $result_str : '上传的文档文件符合审核项目标准。'
-                        ];
-                    }
-                }
+                $aiResult[] = [
+                    'project' => $projectName,
+                    'status' => $passed ? 1 : 0,
+                    'text' => $result_str,
+                    'files' => array_values($fileFindings)
+                ];
             }
-            
-            // 将去重后的结果转回索引数组
-            $aiResult = array_values($aiResult);
 
             $del_ids = [];
             foreach ($ai_pre_res as $ai_pre_re) {

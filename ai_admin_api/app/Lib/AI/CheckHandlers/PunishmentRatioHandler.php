@@ -13,30 +13,47 @@ class PunishmentRatioHandler extends AbstractHandler
 
     public function performAudit(array $data, array $context): ?string
     {
-        $notSelfTotal = $context['not_self_total'] ?? 0;
+        $notSelfTotal = (int)($context['not_self_total'] ?? 0);
         if ($notSelfTotal <= 0) {
             return "[ERROR] 报关单总量未设置，无法计算千分之一比例";
         }
 
-        $falseCount = 0;
-        $errors = [];
+        $matchCount = 0;
+        $totalItems = count($data);
 
         foreach ($data as $item) {
             $res = $item['result'] ?? null;
-            if ($res === 'error') {
-                $errors[] = "[ERROR] 部分资料解析失败: " . ($item['reason'] ?? '请检查文件清晰度');
-                continue;
-            }
-
-            if ($res === false || $res === 'false') {
-                $falseCount++;
+            if ($res === true || $res === 'true') {
+                $matchCount++;
             }
         }
 
-        if ($falseCount / $notSelfTotal >= 0.001) {
-            $errors[] = "存在非自查处罚报关单超过千分之一 (比例: " . round($falseCount / $notSelfTotal * 100, 4) . "%)";
+        $ratio = ($matchCount / $notSelfTotal);
+        $ratioPercent = round($ratio * 100, 4) . "%";
+        
+        $statusText = $ratio < 0.001 ? "符合标准 (低于千分之一)" : "不符合标准 (超出千分之一限额)";
+        
+        return "报关单总量: {$notSelfTotal}, 命中处罚记录: {$matchCount}, 计算比例: {$ratioPercent}。结论: {$statusText}";
+    }
+
+    public function isAccessible(array $data, array $context): bool
+    {
+        $notSelfTotal = (int)($context['not_self_total'] ?? 0);
+        if ($notSelfTotal <= 0) return false;
+
+        $matchCount = 0;
+        foreach ($data as $item) {
+            $res = $item['result'] ?? null;
+            if ($res === true || $res === 'true') {
+                $matchCount++;
+            }
         }
 
-        return empty($errors) ? null : implode('; ', $errors);
+        return ($matchCount / $notSelfTotal) < 0.001;
+    }
+
+    public function getSuccessMessages(array $data, array $context): array
+    {
+        return ["经核验，该项下的违规报关单比例低于千分之一，符合海关合规审查标准。"];
     }
 }
