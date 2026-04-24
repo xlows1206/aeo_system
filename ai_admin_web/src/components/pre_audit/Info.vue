@@ -191,6 +191,7 @@
   };
 
   const openDrawer = () => {
+    console.log('Info.vue V4.4 (Group by Project ID) Loaded');
     params.active = true;
     apiGetPreAuditLog(props.drawerParams.data.id).then((res) => {
       params.lists = res.list;
