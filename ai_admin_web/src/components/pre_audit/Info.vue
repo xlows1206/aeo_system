@@ -109,55 +109,35 @@
   /**
    * 按文件夹（项目）对文件进行分组，并关联审计结果
    */
+  /**
+   * 按文件夹对文件进行分组，并关联审计结果
+   */
   const groupedProjects = computed(() => {
     const groups: Record<string, any> = {};
-    const normalize = (str: string) => str.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
-    
-    // 1. 先按 check_id (项目 ID) 分组文件
     params.files.forEach(file => {
-      const projectId = file.check_id || 0;
-      // 优先用 check_id 分组，如果没有绑定项目则退而求其次用 folder_id
-      const groupKey = projectId ? `project_${projectId}` : `folder_${file.folder_id || 0}`;
-      
-      if (!groups[groupKey]) {
-        groups[groupKey] = {
-          folder_id: file.folder_id || 0,
-          check_id: projectId,
-          folder_name: file.project_name || file.folder_name || '未归类项目',
+      const folderId = file.folder_id || 0;
+      if (!groups[folderId]) {
+        groups[folderId] = {
+          folder_id: folderId,
+          folder_name: file.folder_name || '未归类项目',
           files: [],
           audit_result: null
         };
       }
-      groups[groupKey].files.push(file);
+      groups[folderId].files.push(file);
     });
 
-    // 2. 关联审计结果 (优先通过 check_id 关联)
     params.auditResults.forEach(result => {
-      const checkId = result.check_id;
-      let group = groups[`project_${checkId}`];
-
-      // 如果通过 ID 没匹配上，尝试名称匹配 (兼容老数据或特殊情况)
-      if (!group) {
-        const resultName = result.folder_name;
-        group = Object.values(groups).find(g => {
-          const gn = g.folder_name.trim();
-          return gn === resultName || 
-                 extractProjectName(gn) === extractProjectName(resultName) ||
-                 normalize(gn) === normalize(resultName);
-        });
-      }
-      
-      if (group) {
-        group.audit_result = result;
-        group.check_type = result.check_type;
-        // 确保名称显示为标准的项目名称
-        if (result.folder_name) {
-          group.folder_name = result.folder_name;
-        }
+      const folderId = result.folder_id;
+      if (groups[folderId]) {
+        groups[folderId].audit_result = result;
+        groups[folderId].check_type = result.check_type;
       } else {
-        const fakeId = `result-${result.folder_name}`;
+        // 如果没有匹配的文件（可能是因为后端返回的 folder_id 不对应）
+        // 也可以创建一个虚拟分组来显示这个审计结果
+        const fakeId = `result-${result.folder_id}`;
         groups[fakeId] = {
-          folder_id: fakeId,
+          folder_id: result.folder_id,
           folder_name: result.folder_name,
           files: [],
           audit_result: result,
@@ -191,7 +171,6 @@
   };
 
   const openDrawer = () => {
-    console.log('Info.vue V4.4 (Group by Project ID) Loaded');
     params.active = true;
     apiGetPreAuditLog(props.drawerParams.data.id).then((res) => {
       params.lists = res.list;
